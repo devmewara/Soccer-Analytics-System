@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from './components/layout/Navbar';
 import HomePage from './components/home/HomePage';

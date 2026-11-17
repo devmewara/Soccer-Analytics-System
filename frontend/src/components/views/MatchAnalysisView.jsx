@@ -19,6 +19,8 @@ import {
   ToggleLeft,
   ToggleRight,
   ShieldCheck,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import DemoBanner from '../common/DemoBanner';
 import DemoBadge from '../common/DemoBadge';
@@ -55,6 +57,114 @@ export const MatchAnalysisView = ({
   const [showZoneOverlay, setShowZoneOverlay] = useState(false);
 
   const videoRef = useRef(null);
+  const playerContainerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Helper to query active fullscreen element across browser implementations
+  const getFullscreenElement = () => {
+    if (typeof document === 'undefined') return null;
+    return (
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement ||
+      null
+    );
+  };
+
+  // Cross-browser request fullscreen helper
+  const enterFullscreen = async (element) => {
+    if (!element) return;
+    if (element.requestFullscreen) {
+      await element.requestFullscreen();
+    } else if (element.webkitRequestFullscreen) {
+      await element.webkitRequestFullscreen();
+    } else if (element.mozRequestFullScreen) {
+      await element.mozRequestFullScreen();
+    } else if (element.msRequestFullscreen) {
+      await element.msRequestFullscreen();
+    }
+  };
+
+  // Cross-browser exit fullscreen helper
+  const exitFullscreen = async () => {
+    if (typeof document === 'undefined') return;
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      await document.webkitExitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      await document.mozCancelFullScreen();
+    } else if (document.msExitFullscreen) {
+      await document.msExitFullscreen();
+    }
+  };
+
+  // Handler for toggling fullscreen mode
+  const handleToggleFullscreen = async () => {
+    try {
+      if (isFullscreen) {
+        if (getFullscreenElement()) {
+          await exitFullscreen();
+        } else {
+          setIsFullscreen(false);
+        }
+      } else if (playerContainerRef.current) {
+        const el = playerContainerRef.current;
+        if (
+          el.requestFullscreen ||
+          el.webkitRequestFullscreen ||
+          el.mozRequestFullScreen ||
+          el.msRequestFullscreen
+        ) {
+          try {
+            await enterFullscreen(el);
+          } catch (err) {
+            console.warn('Native fullscreen request rejected, using viewport fallback:', err);
+            setIsFullscreen(true);
+          }
+        } else {
+          setIsFullscreen(true);
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen toggle error:', err);
+    }
+  };
+
+  // Synchronize fullscreen state with browser events and listen for Escape key
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const currentFullscreenElem = getFullscreenElement();
+      const isNowFullscreen = Boolean(
+        currentFullscreenElem &&
+          playerContainerRef.current &&
+          (currentFullscreenElem === playerContainerRef.current ||
+            playerContainerRef.current.contains(currentFullscreenElem))
+      );
+      setIsFullscreen(isNowFullscreen);
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isFullscreen && !getFullscreenElement()) {
+        setIsFullscreen(false);
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFullscreen]);
 
   const isUserUploadedVideo = Boolean(activeVideo?.stream_url || activeVideo?.saved_filename);
   const hasRealAnalytics = Boolean(realAnalytics && realAnalytics.summary_metrics);
@@ -266,158 +376,198 @@ export const MatchAnalysisView = ({
       >
         {/* Panel 1: Video Player */}
         {(viewMode === 'split' || viewMode === 'video') && (
-          <div className="bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between">
-            <div>
-              {/* Video Player Header with Status */}
-              <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3">
-                <div className="flex items-center gap-2">
-                  <Film className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                    {isUserUploadedVideo
-                      ? showAnnotated && hasRealAnalytics
-                        ? 'YOLO & ByteTrack Annotated Stream'
-                        : 'Raw Match Recording'
-                      : 'Tactical Cam Preview (Demo)'}
+          <div
+            ref={playerContainerRef}
+            className={`${
+              isFullscreen
+                ? 'fixed inset-0 z-50 w-screen h-screen bg-black p-4 sm:p-6 flex flex-col justify-between select-none'
+                : 'bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between'
+            } transition-colors`}
+          >
+            {/* Video Player Header with Status */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <Film className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                  {isUserUploadedVideo
+                    ? showAnnotated && hasRealAnalytics
+                      ? 'YOLO & ByteTrack Annotated Stream'
+                      : 'Raw Match Recording'
+                    : 'Tactical Cam Preview (Demo)'}
+                </span>
+                {isFullscreen && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hidden sm:inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    FULLSCREEN
                   </span>
-                </div>
-
-                {/* Overlays / Stream View Switcher */}
-                <div className="flex items-center gap-1.5">
-                  {isUserUploadedVideo && hasRealAnalytics ? (
-                    <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-[10px] font-mono">
-                      <button
-                        onClick={() => setShowAnnotated(true)}
-                        className={`px-2 py-0.5 rounded transition-colors ${
-                          showAnnotated
-                            ? 'bg-emerald-500 text-black font-bold'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Annotated AI
-                      </button>
-                      <button
-                        onClick={() => setShowAnnotated(false)}
-                        className={`px-2 py-0.5 rounded transition-colors ${
-                          !showAnnotated
-                            ? 'bg-[#17212E] text-white font-bold'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        Raw
-                      </button>
-                    </div>
-                  ) : !isUserUploadedVideo ? (
-                    <>
-                      <button
-                        onClick={() => setShowBoundingBoxes(!showBoundingBoxes)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                          showBoundingBoxes
-                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-[#17212E] text-slate-500 border border-[#253244]'
-                        }`}
-                        title="Toggle simulated YOLO bounding boxes"
-                      >
-                        Boxes: {showBoundingBoxes ? 'ON' : 'OFF'}
-                      </button>
-
-                      <button
-                        onClick={() => setShowPitchCalibration(!showPitchCalibration)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                          showPitchCalibration
-                            ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
-                            : 'bg-[#17212E] text-slate-500 border border-[#253244]'
-                        }`}
-                        title="Toggle simulated pitch perspective lines"
-                      >
-                        Grid: {showPitchCalibration ? 'ON' : 'OFF'}
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                      Analysis Pending
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Video Player Display Container */}
-              <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-[#253244] flex items-center justify-center select-none">
-                {videoStreamUrl ? (
-                  /* Real HTML5 Video Player playing user uploaded video or annotated video */
-                  <video
-                    key={videoStreamUrl}
-                    ref={videoRef}
-                    src={videoStreamUrl}
-                    className="w-full h-full object-contain"
-                    onTimeUpdate={() => {
-                      if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
-                    }}
-                    onLoadedMetadata={() => {
-                      if (videoRef.current && videoRef.current.duration) {
-                        setDuration(videoRef.current.duration);
-                      }
-                    }}
-                    onEnded={() => setIsPlaying(false)}
-                    controls={false}
-                  />
-                ) : (
-                  /* Simulated Tactical Broadcast Screen with football pitch canvas (Demo) */
-                  <div className="relative w-full h-full bg-[#07150E] flex items-center justify-center overflow-hidden">
-                    {showPitchCalibration && (
-                      <div className="absolute inset-0 pointer-events-none opacity-30">
-                        <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                          <line x1="8" y1="92" x2="36" y2="18" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
-                          <line x1="92" y1="92" x2="64" y2="18" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
-                          <line x1="18" y1="50" x2="82" y2="50" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
-                        </svg>
-                      </div>
-                    )}
-
-                    {showBoundingBoxes && (
-                      <>
-                        <div className="absolute left-[54%] top-[38%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                          <span className="text-[8px] font-mono bg-sky-500 text-black px-1 font-semibold rounded-t">
-                            #17 KDB (Demo)
-                          </span>
-                          <div className="w-10 h-20 border-2 border-sky-400 bg-sky-500/10 rounded-sm"></div>
-                        </div>
-
-                        <div className="absolute left-[72%] top-[45%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                          <span className="text-[8px] font-mono bg-sky-500 text-black px-1 font-semibold rounded-t">
-                            #9 Haaland (Demo)
-                          </span>
-                          <div className="w-12 h-24 border-2 border-sky-400 bg-sky-500/10 rounded-sm"></div>
-                        </div>
-
-                        <div className="absolute left-[42%] top-[30%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                          <span className="text-[8px] font-mono bg-rose-500 text-white px-1 font-semibold rounded-t">
-                            #7 Saka (Demo)
-                          </span>
-                          <div className="w-10 h-20 border-2 border-rose-500 bg-rose-500/10 rounded-sm"></div>
-                        </div>
-
-                        {showBallTrail && (
-                          <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                            <span className="text-[7px] font-mono bg-amber-400 text-black px-1 font-semibold rounded-t">
-                              Ball (Demo)
-                            </span>
-                            <div className="w-4 h-4 rounded-full border-2 border-amber-300"></div>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    <div className="absolute top-3 left-3 bg-[#080B10]/90 px-2.5 py-1 rounded text-[10px] font-mono text-slate-300 border border-[#253244]">
-                      <span>Tactical Demonstration Preview</span>
-                    </div>
-
-                    <div className="absolute bottom-3 right-3 bg-[#080B10]/90 px-2.5 py-1 rounded text-[10px] font-mono text-amber-400 border border-amber-500/30">
-                      <span>Simulated Detections</span>
-                    </div>
-                  </div>
                 )}
               </div>
 
+              {/* Overlays / Stream View Switcher & Fullscreen Button */}
+              <div className="flex items-center gap-2">
+                {isUserUploadedVideo && hasRealAnalytics ? (
+                  <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-[10px] font-mono">
+                    <button
+                      onClick={() => setShowAnnotated(true)}
+                      className={`px-2 py-0.5 rounded transition-colors ${
+                        showAnnotated
+                          ? 'bg-emerald-500 text-black font-bold'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Annotated AI
+                    </button>
+                    <button
+                      onClick={() => setShowAnnotated(false)}
+                      className={`px-2 py-0.5 rounded transition-colors ${
+                        !showAnnotated
+                          ? 'bg-[#17212E] text-white font-bold'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Raw
+                    </button>
+                  </div>
+                ) : !isUserUploadedVideo ? (
+                  <>
+                    <button
+                      onClick={() => setShowBoundingBoxes(!showBoundingBoxes)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                        showBoundingBoxes
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-[#17212E] text-slate-500 border border-[#253244]'
+                      }`}
+                      title="Toggle simulated YOLO bounding boxes"
+                    >
+                      Boxes: {showBoundingBoxes ? 'ON' : 'OFF'}
+                    </button>
+
+                    <button
+                      onClick={() => setShowPitchCalibration(!showPitchCalibration)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                        showPitchCalibration
+                          ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                          : 'bg-[#17212E] text-slate-500 border border-[#253244]'
+                      }`}
+                      title="Toggle simulated pitch perspective lines"
+                    >
+                      Grid: {showPitchCalibration ? 'ON' : 'OFF'}
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                    Analysis Pending
+                  </span>
+                )}
+
+                {/* Fullscreen Icon Button */}
+                <button
+                  onClick={handleToggleFullscreen}
+                  className="p-1.5 rounded-lg bg-[#080B10] hover:bg-[#17212E] text-slate-300 hover:text-white border border-[#253244] text-xs font-mono transition-colors flex items-center gap-1 active:scale-95"
+                  title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen'}
+                  aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                >
+                  {isFullscreen ? (
+                    <>
+                      <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-[10px] font-mono text-slate-300 hidden sm:inline">Exit</span>
+                    </>
+                  ) : (
+                    <>
+                      <Maximize2 className="w-3.5 h-3.5 text-slate-300 hover:text-emerald-400" />
+                      <span className="text-[10px] font-mono text-slate-300 hidden sm:inline">Fullscreen</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Video Player Display Container */}
+            <div
+              className={`relative w-full ${
+                isFullscreen
+                  ? 'flex-1 min-h-0 my-3 rounded-xl'
+                  : 'aspect-video rounded-xl'
+              } overflow-hidden bg-black border border-[#253244] flex items-center justify-center select-none`}
+            >
+              {videoStreamUrl ? (
+                /* Real HTML5 Video Player playing user uploaded video or annotated video */
+                <video
+                  key={videoStreamUrl}
+                  ref={videoRef}
+                  src={videoStreamUrl}
+                  className="w-full h-full object-contain"
+                  onTimeUpdate={() => {
+                    if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
+                  }}
+                  onLoadedMetadata={() => {
+                    if (videoRef.current && videoRef.current.duration) {
+                      setDuration(videoRef.current.duration);
+                    }
+                  }}
+                  onEnded={() => setIsPlaying(false)}
+                  controls={false}
+                />
+              ) : (
+                /* Simulated Tactical Broadcast Screen with football pitch canvas (Demo) */
+                <div className="relative w-full h-full bg-[#07150E] flex items-center justify-center overflow-hidden">
+                  {showPitchCalibration && (
+                    <div className="absolute inset-0 pointer-events-none opacity-30">
+                      <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <line x1="8" y1="92" x2="36" y2="18" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
+                        <line x1="92" y1="92" x2="64" y2="18" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
+                        <line x1="18" y1="50" x2="82" y2="50" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
+                      </svg>
+                    </div>
+                  )}
+
+                  {showBoundingBoxes && (
+                    <>
+                      <div className="absolute left-[54%] top-[38%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
+                        <span className="text-[8px] font-mono bg-sky-500 text-black px-1 font-semibold rounded-t">
+                          #17 KDB (Demo)
+                        </span>
+                        <div className="w-10 h-20 border-2 border-sky-400 bg-sky-500/10 rounded-sm"></div>
+                      </div>
+
+                      <div className="absolute left-[72%] top-[45%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
+                        <span className="text-[8px] font-mono bg-sky-500 text-black px-1 font-semibold rounded-t">
+                          #9 Haaland (Demo)
+                        </span>
+                        <div className="w-12 h-24 border-2 border-sky-400 bg-sky-500/10 rounded-sm"></div>
+                      </div>
+
+                      <div className="absolute left-[42%] top-[30%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
+                        <span className="text-[8px] font-mono bg-rose-500 text-white px-1 font-semibold rounded-t">
+                          #7 Saka (Demo)
+                        </span>
+                        <div className="w-10 h-20 border-2 border-rose-500 bg-rose-500/10 rounded-sm"></div>
+                      </div>
+
+                      {showBallTrail && (
+                        <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
+                          <span className="text-[7px] font-mono bg-amber-400 text-black px-1 font-semibold rounded-t">
+                            Ball (Demo)
+                          </span>
+                          <div className="w-4 h-4 rounded-full border-2 border-amber-300"></div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div className="absolute top-3 left-3 bg-[#080B10]/90 px-2.5 py-1 rounded text-[10px] font-mono text-slate-300 border border-[#253244]">
+                    <span>Tactical Demonstration Preview</span>
+                  </div>
+
+                  <div className="absolute bottom-3 right-3 bg-[#080B10]/90 px-2.5 py-1 rounded text-[10px] font-mono text-amber-400 border border-amber-500/30">
+                    <span>Simulated Detections</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Controls Section (Timeline + Playback Bar) */}
+            <div className="shrink-0 w-full">
               {/* Match Timeline Scrub Bar */}
               <div className="mt-3.5 space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-mono text-slate-400">
@@ -463,24 +613,38 @@ export const MatchAnalysisView = ({
                   </button>
                 </div>
 
-                {/* Playback Speed Multiplier */}
-                <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-xs font-mono">
-                  {[0.5, 1.0, 2.0].map((rate) => (
+                <div className="flex items-center gap-2">
+                  {/* Playback Speed Multiplier */}
+                  <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-xs font-mono">
+                    {[0.5, 1.0, 2.0].map((rate) => (
+                      <button
+                        key={rate}
+                        onClick={() => {
+                          setPlaybackSpeed(rate);
+                          if (videoRef.current) videoRef.current.playbackRate = rate;
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                          playbackSpeed === rate
+                            ? 'bg-emerald-500 text-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {rate}x
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Additional Exit Fullscreen button in bottom bar when in fullscreen mode */}
+                  {isFullscreen && (
                     <button
-                      key={rate}
-                      onClick={() => {
-                        setPlaybackSpeed(rate);
-                        if (videoRef.current) videoRef.current.playbackRate = rate;
-                      }}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                        playbackSpeed === rate
-                          ? 'bg-emerald-500 text-black'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
+                      onClick={handleToggleFullscreen}
+                      className="px-2.5 py-1 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-mono border border-[#253244] transition-colors flex items-center gap-1"
+                      title="Exit Fullscreen (Esc)"
                     >
-                      {rate}x
+                      <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-[10px] hidden sm:inline">Exit Fullscreen</span>
                     </button>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>

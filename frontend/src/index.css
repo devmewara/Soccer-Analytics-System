@@ -11,6 +11,15 @@
   }
 }
 
+/* Ensure clean black background in native fullscreen */
+:fullscreen {
+  background-color: #000000 !important;
+}
+
+:-webkit-full-screen {
+  background-color: #000000 !important;
+}
+
 /* Custom sleek, restrained scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
