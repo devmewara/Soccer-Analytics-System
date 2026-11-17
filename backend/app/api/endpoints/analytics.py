@@ -1,18 +1,22 @@
-from datetime import datetime, timezone
-from fastapi import APIRouter
-from app.schemas.analytics import OverviewStatsResponse, TeamStats, PlayerMetric, PossessionPeriod
+import json
+from pathlib import Path
+from fastapi import APIRouter, HTTPException, status
+from app.core.config import settings
+from app.schemas.analytics import OverviewStatsResponse, TeamStats, PlayerMetric, PossessionPeriod, RealVideoAnalyticsResponse
+from app.services.cv_pipeline import cv_pipeline_service
 
 router = APIRouter()
+
 
 @router.get("/overview", response_model=OverviewStatsResponse)
 async def get_overview_analytics():
     """
-    Returns sample soccer match overview metrics for the dashboard.
+    Returns sample soccer match overview metrics for the demonstration sandbox.
     DISCLAIMER: All returned metrics are DEMO PLACEHOLDER VALUES for frontend layout verification.
     """
     return OverviewStatsResponse(
         is_demo_data=True,
-        disclaimer="DEMO DATASET: The statistics below are simulated placeholders for UI verification. Authentic metrics will be computed via YOLOv8 player tracking in Phase 2.",
+        disclaimer="DEMO DATASET: The statistics below are simulated placeholders for UI verification. Authentic metrics are computed via YOLO + ByteTrack for uploaded match videos.",
         match_metadata={
             "match_title": "Manchester Blue vs London Red",
             "competition": "Premier Showcase Cup (Demo)",
@@ -100,9 +104,48 @@ async def get_overview_analytics():
             ),
         ],
         pipeline_status={
-            "detection": "Pending Phase 2",
-            "tracking": "Pending Phase 2",
-            "homography": "Pending Phase 2",
-            "speed_estimation": "Pending Phase 2"
+            "detection": "Ultralytics YOLO11n Active",
+            "tracking": "ByteTrack Multi-Object Active",
+            "homography": "Pending 4-point Calibration",
+            "speed_estimation": "Pending Homography"
         }
+    )
+
+
+@router.get("/{video_id}", response_model=RealVideoAnalyticsResponse)
+async def get_video_real_analytics(video_id: str):
+    """
+    Returns authentic computed computer vision tracking metrics for an analyzed match video.
+    """
+    analytics_file = settings.UPLOAD_DIR / f"{video_id}_analytics.json"
+
+    if analytics_file.exists():
+        try:
+            with open(analytics_file, "r") as f:
+                data = json.load(f)
+            return data
+        except Exception as err:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to read analytics file for video '{video_id}': {str(err)}"
+            )
+
+    # Check job status if not yet finished
+    job = cv_pipeline_service.job_manager.get_job(video_id, upload_dir=settings.UPLOAD_DIR)
+    if job:
+        status_val = job.get("status")
+        if status_val in ["queued", "processing"]:
+            raise HTTPException(
+                status_code=status.HTTP_202_ACCEPTED,
+                detail=f"Video analysis is in progress ({job.get('progress', 0)}% complete). Please poll status."
+            )
+        elif status_val == "failed":
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Computer vision analysis failed: {job.get('error_message', 'Unknown error')}"
+            )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"No analytics found for video '{video_id}'. Trigger analysis via POST /api/video/{video_id}/analyze."
     )

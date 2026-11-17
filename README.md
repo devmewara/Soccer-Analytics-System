@@ -1,17 +1,22 @@
-# AI-Powered Soccer Match Analytics System
+# PitchVision AI — AI-Powered Soccer Match Analytics
 
-An enterprise-grade, computer-vision-ready soccer analytics platform built with **FastAPI** (Python) and **React** (Vite + Tailwind CSS + Chart.js).
+An enterprise-grade, computer-vision-powered soccer analytics platform built with **FastAPI** (Python), **Ultralytics YOLO11**, **ByteTrack**, and **React** (Vite + Tailwind CSS + Chart.js).
 
-Designed for tactical video ingestion, player kinematics, pitch homography calibration, and match intelligence.
+Designed for tactical football video ingestion, deep-learning player and ball detection, multi-object tracking, and verifiable match telemetry.
 
 ---
 
-## Current Status: Phase 1 (Project Foundation)
+## Current Status: Phase 2 Active (Real Computer Vision & Tracking)
 
-> **Important Notice Regarding Data & Future Modules:**
-> In accordance with Phase 1 design requirements, all match statistics and tactical metrics displayed on the dashboard are **explicitly labeled demo placeholders** for UI and architectural validation. 
-> 
-> Computer vision inference modules (**Ultralytics YOLOv8**, **ByteTrack**, and **OpenCV Homography**) will be integrated in **Phase 2** upon phase approval.
+The system now runs authentic computer vision and multi-object tracking:
+
+1. **Object Detection**: Pretrained **Ultralytics YOLO11n** detects:
+   - **Person (COCO Class 0)**: Soccer players, officials, goalkeepers
+   - **Sports Ball (COCO Class 32)**: Match football
+2. **Multi-Object Tracking (MOT)**: **ByteTrack** (`tracker="bytetrack.yaml"`) maintains persistent tracklet identities (`Player #1`, `Player #2`, etc.) across consecutive video frames using Kalman filter motion prediction and Hungarian bipartite matching.
+3. **OpenCV Video Annotation**: Writes tactical bounding boxes, track IDs, confidence ratings, and a broadcast-style telemetry HUD directly onto the video frames.
+4. **Authentic Metric Engine**: Calculates verified detection counts, player visibility durations, ball presence coverage, and inference FPS, persisting results to JSON.
+5. **Scientific Integrity**: Speed in $km/h$ and physical distance in meters require 4-point homography perspective calibration (camera pixel coordinates $\to$ 105m × 68m FIFA pitch dimensions). In accordance with engineering standards, uncalibrated speed metrics are **not** fabricated.
 
 ---
 
@@ -22,61 +27,58 @@ Soccer-Analytics-System/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py              # FastAPI application, CORS, and router bindings
+│   │   ├── main.py              # FastAPI app, CORS, static uploads mount
 │   │   ├── core/
 │   │   │   ├── __init__.py
 │   │   │   └── config.py        # Centralized settings (CORS, file size, paths)
 │   │   ├── schemas/             # Pydantic data validation schemas
 │   │   │   ├── __init__.py
-│   │   │   ├── health.py        # Health check response model
-│   │   │   ├── video.py         # Video upload & job status models
-│   │   │   └── analytics.py     # Match, player, & team stats models
+│   │   │   ├── health.py        # HealthCheckResponse model
+│   │   │   ├── video.py         # VideoUploadResponse, VideoJobStatus, StartAnalysisResponse
+│   │   │   └── analytics.py     # RealVideoAnalyticsResponse, OverviewStatsResponse
 │   │   ├── services/
 │   │   │   ├── __init__.py
-│   │   │   └── cv_pipeline.py   # Modular contract stub for future YOLO/ByteTrack
+│   │   │   └── cv_pipeline.py   # Ultralytics YOLO11n + ByteTrack CV pipeline & JobManager
 │   │   └── api/
 │   │       ├── __init__.py
 │   │       ├── router.py        # API v1 route aggregator
 │   │       └── endpoints/
 │   │           ├── __init__.py
-│   │           ├── health.py    # GET /api/health
-│   │           ├── video.py     # POST /api/video/upload, GET /api/video/recent
-│   │           └── analytics.py # GET /api/analytics/overview (labeled demo data)
-│   ├── uploads/                 # Destination folder for raw match videos
-│   ├── requirements.txt         # FastAPI, Uvicorn, Pydantic, Python-multipart
+│   │           ├── health.py    # GET /api/health (CV readiness check)
+│   │           ├── video.py     # POST upload, POST {id}/analyze, GET status/{id}, GET recent
+│   │           └── analytics.py # GET {video_id} (real CV metrics), GET overview (demo)
+│   ├── uploads/                 # Storage for raw match footage and annotated videos
+│   ├── requirements.txt         # FastAPI, Ultralytics, OpenCV, NumPy, Pandas, Scipy, Lapx
 │   └── .env.example             # Server configuration template
 │
 ├── frontend/
 │   ├── index.html               # PitchVision AI HTML entry
-│   ├── package.json             # React, Vite, Tailwind, Chart.js, Lucide
-│   ├── vite.config.js           # Vite server configuration
-│   ├── tailwind.config.js       # Dark navy & pitch green theme
-│   ├── postcss.config.js
+│   ├── package.json             # React 18, Vite, Tailwind CSS, Chart.js, Lucide
+│   ├── vite.config.js           # Vite server & build configuration
+│   ├── tailwind.config.js       # Sports technology dark theme palette
 │   └── src/
 │       ├── main.jsx             # React DOM entry
-│       ├── App.jsx              # Main view manager & API poller
-│       ├── index.css            # Dark pitch styling & Tailwind directives
+│       ├── App.jsx              # Application router & toast notification manager
 │       ├── api/
-│       │   └── client.js        # Axios API client with progress monitoring
+│       │   └── client.js        # Axios API client (uploads, analyze, polling, streams)
 │       ├── constants/
-│       │   └── mockData.js      # Explicitly labeled demo match dataset
+│       │   └── mockData.js      # Explicitly labeled demo sandbox dataset
 │       └── components/
 │           ├── common/
-│           │   ├── DemoBadge.jsx  # [DEMO DATA] indicator badge
-│           │   ├── DemoBanner.jsx # Sticky phase notice banner
-│           │   └── StatCard.jsx   # Metrics card component
+│           │   ├── DemoBadge.jsx     # [DEMO SANDBOX] badge
+│           │   ├── DemoBanner.jsx    # Disclaimer banner
+│           │   └── PitchCanvas.jsx   # Interactive 2D FIFA football pitch (105m × 68m)
 │           ├── layout/
-│           │   ├── Sidebar.jsx    # 5-item navigation with live API health status
-│           │   └── Navbar.jsx     # Top status bar & upload trigger
-│           ├── dashboard/
-│           │   ├── OverviewTab.jsx          # KPI grid, upload, charts, player table
-│           │   ├── VideoUploadSection.jsx   # Drag-and-drop video uploader
-│           │   └── PossessionChart.jsx      # Chart.js line & bar visualizers
+│           │   └── Navbar.jsx        # Horizontal top navigation & backend health status
+│           ├── home/
+│           │   └── HomePage.jsx      # Upload-first hero console & recent match files
+│           ├── analysis/
+│           │   └── AnalysisWorkspace.jsx # AI inference control banner, progress bar, & tabs
 │           └── views/
-│               ├── MatchAnalysisView.jsx    # 2D pitch zones & pass networks
-│               ├── PlayerTrackingView.jsx   # ByteTrack telemetry & pipeline preview
-│               ├── TeamAnalyticsView.jsx    # Formations & tactical shape
-│               └── HeatmapsView.jsx         # 2D pitch spatial density visualizer
+│               ├── MatchAnalysisView.jsx # Split/video player with annotated vs raw toggle
+│               ├── PlayerTrackingView.jsx# ByteTrack player roster & real frame telemetry
+│               ├── TeamAnalyticsView.jsx # Formations & tactical shape (Pending clustering)
+│               └── HeatmapsView.jsx      # 2D pitch spatial density (Pending homography)
 │
 └── README.md
 ```
@@ -85,17 +87,17 @@ Soccer-Analytics-System/
 
 ## Prerequisites
 
-- **Python**: 3.10 or higher (Tested with Python 3.13)
-- **Node.js**: v18.0 or higher
+- **Python**: 3.10 or higher (Tested on Python 3.13 macOS Apple Silicon arm64)
+- **Node.js**: v18.0 or higher (Tested on Node v26)
 - **npm**: v9.0 or higher
 
 ---
 
 ## Quick Start Guide
 
-### 1. Start the Backend (FastAPI)
+### 1. Start the Backend (FastAPI + YOLO + ByteTrack)
 
-Open a terminal and navigate to the `backend` folder:
+Open a terminal and navigate to the `backend` directory:
 
 ```bash
 cd backend
@@ -104,15 +106,13 @@ cd backend
 python3 -m venv venv
 
 # Activate virtual environment
-# On macOS / Linux:
 source venv/bin/activate
-# On Windows (cmd / powershell):
-# venv\Scripts\activate
+# On Windows: venv\Scripts\activate
 
-# Install required dependencies
+# Install dependencies (FastAPI, Ultralytics, OpenCV, NumPy, Pandas, Scipy, Lapx)
 pip install -r requirements.txt
 
-# Start the development server
+# Start the FastAPI server
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -124,7 +124,7 @@ uvicorn app.main:app --reload --port 8000
 
 ### 2. Start the Frontend (React + Vite)
 
-Open a **separate** terminal window and navigate to the `frontend` folder:
+Open a **separate** terminal window and navigate to the `frontend` directory:
 
 ```bash
 cd frontend
@@ -140,34 +140,34 @@ npm run dev
 
 ---
 
-## Implemented Features (Phase 1)
+## Complete Video Analysis Workflow
 
-1. **Dashboard UI**:
-   - Modern dark navy/black sports analytics aesthetic (`#070A0F`, `#0D131F`).
-   - Pitch emerald green accents (`#10B981`) and neon glows.
-   - Responsive multi-tab sidebar navigation:
-     - **Overview**
-     - **Match Analysis**
-     - **Player Tracking**
-     - **Team Analytics**
-     - **Heatmaps**
-
-2. **Frontend-Backend Integration**:
-   - Live backend health connectivity indicator in Sidebar and Navbar.
-   - Real video upload via `POST /api/video/upload` with live percentage progress bar.
-   - Uploaded files safely validated (`.mp4`, `.avi`, `.mov`, `.mkv`) and stored in `backend/uploads/`.
-   - List of uploaded match footage automatically queried via `GET /api/video/recent`.
-   - Dynamic synchronization of demo overview metrics via `GET /api/analytics/overview`.
-
-3. **Data Integrity & Labeling**:
-   - Every simulated number is explicitly labeled with `[DEMO DATA]` badges and alert banners.
-   - Clear distinction between Phase 1 (foundation) and Phase 2 (computer vision inference).
+1. **Upload Match Video**:
+   - Open `http://localhost:5173`.
+   - Drag and drop a football match clip (`.mp4`, `.avi`, `.mov`, `.mkv` up to 500MB) onto the upload console.
+   - The video is streamed to `backend/uploads/` and opens in the **Analysis Workspace**.
+2. **Start AI Analysis**:
+   - In the **Analysis Workspace**, click **"Start AI Video Analysis"**.
+   - The backend runs Ultralytics YOLO11n + ByteTrack in an asynchronous daemon worker.
+   - Live progress, current frame index (`Frame 45/180`), and inference FPS are displayed in real time.
+3. **Inspect Annotated Video & Telemetry**:
+   - **Video Analysis Tab**: Toggle between **"Annotated AI"** (with YOLO boxes and ByteTrack IDs) and **"Raw Footage"**. Inspect real telemetry cards (Unique Players Tracked, Ball Sightings, Avg Players/Frame, Inference Speed).
+   - **Player Tracking Tab**: Select individual tracked players (`Player #1`, `Player #2`, etc.) to view active frame spans, visibility duration, and bounding box coordinates.
+   - **Match Overview Tab**: View comprehensive detection summary metrics.
+4. **Explore Demo Sandbox**:
+   - Click **"Launch Demo Showcase"** to preview full 22-player modeled telemetry, speed profiles, and 2D tactical pitch boards.
 
 ---
 
-## Upcoming Implementation: Phase 2 (Pending Approval)
+## API Endpoints Reference
 
-- [ ] **Ultralytics YOLOv8**: Real-time object detection for players, goalkeepers, referees, and the ball.
-- [ ] **ByteTrack Tracker**: Association algorithm for multi-object identity persistence across video frames.
-- [ ] **OpenCV Pitch Homography**: Calibration matrix to convert camera pixel coordinates into metric pitch positions (meters).
-- [ ] **Kinematic Engine**: Calculation of authentic instantaneous player speeds ($km/h$), cumulative distances, sprint events, and continuous 2D position heatmaps.
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/health` | Backend and CV pipeline readiness check (`yolo11n.pt`) |
+| `POST` | `/api/video/upload` | Multipart video upload with extension and size validation |
+| `POST` | `/api/video/{video_id}/analyze` | Trigger asynchronous YOLO + ByteTrack background processing |
+| `GET` | `/api/video/status/{video_id}` | Live job status, progress percentage, frame counter, and FPS |
+| `GET` | `/api/video/recent` | List of uploaded match recordings stored on disk |
+| `GET` | `/api/analytics/{video_id}` | Authentic computed computer vision metrics in JSON format |
+| `GET` | `/api/analytics/overview` | Synthesized match dataset for the demo sandbox |
+| `GET` | `/uploads/{filename}` | Direct static streaming route for uploaded and annotated videos |

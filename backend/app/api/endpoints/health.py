@@ -13,10 +13,13 @@ async def get_health_status():
     Returns system health, version, and CV pipeline readiness.
     Used by frontend to show live connectivity indicator.
     """
+    readiness = cv_pipeline_service.check_readiness()
+    is_ready = readiness.get("ready_for_inference", False)
+
     return HealthCheckResponse(
         status="healthy",
         version=settings.VERSION,
         timestamp=datetime.now(timezone.utc).isoformat(),
-        cv_pipeline_ready=cv_pipeline_service.is_initialized,
-        message="Backend foundation is active and responsive. CV pipeline ready for Phase 2."
+        cv_pipeline_ready=is_ready,
+        message=f"Backend active. Computer vision pipeline ready ({readiness.get('yolo_detection', 'YOLO')})."
     )

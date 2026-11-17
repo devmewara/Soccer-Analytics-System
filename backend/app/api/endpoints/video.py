@@ -1,13 +1,12 @@
 import os
 import uuid
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, status
 from app.core.config import settings
-from app.schemas.video import VideoUploadResponse, VideoJobStatus
+from app.schemas.video import VideoUploadResponse, VideoJobStatus, StartAnalysisResponse
 from app.services.cv_pipeline import cv_pipeline_service
 
 router = APIRouter()
@@ -22,12 +21,22 @@ def format_bytes(num_bytes: int) -> str:
     return f"{num_bytes:.1f} TB"
 
 
+def find_video_file(video_id: str) -> Optional[Path]:
+    """Finds the stored video file for a given video_id."""
+    if not settings.UPLOAD_DIR.exists():
+        return None
+    for item in settings.UPLOAD_DIR.iterdir():
+        if item.is_file() and not item.name.startswith("annotated_"):
+            if item.stem == video_id or item.name == video_id:
+                return item
+    return None
+
+
 @router.post("/upload", response_model=VideoUploadResponse)
 async def upload_video(file: UploadFile = File(...)):
     """
-    Accepts match video uploads, validates file extension and constraints,
-    stores the raw footage in the designated storage directory, and prepares
-    the pipeline job for future YOLO/ByteTrack processing.
+    Accepts match video uploads, validates format and constraints,
+    stores the raw footage in backend/uploads, and returns video_id.
     """
     # 1. Validate file presence
     if not file.filename:
@@ -89,7 +98,83 @@ async def upload_video(file: UploadFile = File(...)):
         status="ready_for_analysis",
         stream_url=f"/uploads/{safe_filename}",
         uploaded_at=datetime.now(timezone.utc).isoformat(),
-        message="Video uploaded successfully and stored in backend/uploads. Awaiting CV Phase 2 for YOLO & tracking inference."
+        message="Video uploaded successfully. Ready for YOLO & ByteTrack computer vision analysis."
+    )
+
+
+@router.post("/{video_id}/analyze", response_model=StartAnalysisResponse)
+async def analyze_video(video_id: str, conf: float = 0.25):
+    """
+    Triggers asynchronous computer vision detection (Ultralytics YOLO) and
+    multi-object tracking (ByteTrack) on the uploaded video file.
+    """
+    video_file = find_video_file(video_id)
+    if not video_file or not video_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video with ID '{video_id}' not found in uploads directory."
+        )
+
+    output_filename = f"annotated_{video_file.name}"
+    output_path = settings.UPLOAD_DIR / output_filename
+    analytics_path = settings.UPLOAD_DIR / f"{video_id}_analytics.json"
+
+    # Start background thread execution
+    job_info = cv_pipeline_service.start_background_analysis(
+        video_id=video_id,
+        input_video_path=video_file,
+        output_video_path=output_path,
+        analytics_path=analytics_path,
+        conf_threshold=conf,
+    )
+
+    return StartAnalysisResponse(
+        video_id=video_id,
+        job_id=job_info.get("job_id", f"job_{video_id[:8]}"),
+        status=job_info.get("status", "processing"),
+        message=job_info.get("message", "Computer vision tracking pipeline started in background."),
+        progress=job_info.get("progress", 0),
+    )
+
+
+@router.get("/status/{video_id}", response_model=VideoJobStatus)
+async def get_video_processing_status(video_id: str):
+    """
+    Returns live computer vision processing status, frame progress, and output URLs for a given video.
+    """
+    job = cv_pipeline_service.job_manager.get_job(video_id, upload_dir=settings.UPLOAD_DIR)
+    if job:
+        return VideoJobStatus(
+            job_id=job.get("job_id", f"job_{video_id[:8]}"),
+            video_id=video_id,
+            status=job.get("status", "processing"),
+            progress=job.get("progress", 0),
+            processed_frames=job.get("processed_frames", 0),
+            total_frames=job.get("total_frames", 0),
+            current_fps=job.get("current_fps"),
+            cv_engine="Ultralytics YOLO11n + ByteTrack",
+            annotated_video_url=job.get("annotated_video_url"),
+            error_message=job.get("error_message"),
+            message=job.get("message", "Processing in progress..."),
+        )
+
+    # Check if raw video exists
+    video_file = find_video_file(video_id)
+    if video_file and video_file.exists():
+        return VideoJobStatus(
+            job_id=f"job_{video_id[:8]}",
+            video_id=video_id,
+            status="ready_for_analysis",
+            progress=0,
+            processed_frames=0,
+            total_frames=0,
+            cv_engine="Ultralytics YOLO11n + ByteTrack",
+            message="Video is stored and ready for computer vision analysis.",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Video with ID '{video_id}' not found."
     )
 
 
@@ -101,30 +186,24 @@ async def list_recent_videos():
     videos = []
     if settings.UPLOAD_DIR.exists():
         for item in settings.UPLOAD_DIR.iterdir():
-            if item.is_file() and item.suffix.lower() in settings.ALLOWED_VIDEO_EXTENSIONS:
+            if item.is_file() and item.suffix.lower() in settings.ALLOWED_VIDEO_EXTENSIONS and not item.name.startswith("annotated_"):
                 stat = item.stat()
+                video_id = item.stem
+                # Check if annotated version exists
+                annotated_file = settings.UPLOAD_DIR / f"annotated_{item.name}"
+                analytics_file = settings.UPLOAD_DIR / f"{video_id}_analytics.json"
+                is_processed = annotated_file.exists() and analytics_file.exists()
+
                 videos.append({
+                    "video_id": video_id,
                     "filename": item.name,
                     "stream_url": f"/uploads/{item.name}",
+                    "annotated_stream_url": f"/uploads/{annotated_file.name}" if is_processed else None,
                     "file_size_formatted": format_bytes(stat.st_size),
                     "created_at": datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
-                    "status": "Ready for CV Pipeline"
+                    "status": "Analyzed" if is_processed else "Ready for Analysis",
+                    "is_analyzed": is_processed,
                 })
     # Sort descending by creation date
     videos.sort(key=lambda x: x["created_at"], reverse=True)
     return videos
-
-
-@router.get("/status/{video_id}", response_model=VideoJobStatus)
-async def get_video_processing_status(video_id: str):
-    """
-    Returns current computer vision processing status for a given video.
-    """
-    return VideoJobStatus(
-        job_id=f"job_{video_id[:8]}",
-        video_id=video_id,
-        status="pending",
-        progress=0,
-        cv_engine="YOLOv8 + ByteTrack (Future Phase)",
-        message="CV pipeline inference not yet triggered. Foundation is awaiting Phase 2 implementation."
-    )

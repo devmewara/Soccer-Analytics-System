@@ -23,6 +23,10 @@ backend/.env
 backend/uploads/*
 !backend/uploads/.gitkeep
 
+# Model Weights
+*.pt
+*.onnx
+
 # OS / Editor
 .DS_Store
 Thumbs.db

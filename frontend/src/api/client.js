@@ -56,6 +56,18 @@ export const api = {
     return response.data;
   },
 
+  // Trigger CV analysis pipeline (YOLO11 + ByteTrack)
+  startVideoAnalysis: async (videoId, conf = 0.25) => {
+    const response = await apiClient.post(`/video/${videoId}/analyze?conf=${conf}`);
+    return response.data;
+  },
+
+  // Get authentic computed computer vision tracking analytics
+  getRealVideoAnalytics: async (videoId) => {
+    const response = await apiClient.get(`/analytics/${videoId}`);
+    return response.data;
+  },
+
   // Resolve video stream URL for playback
   getVideoStreamUrl: (filenameOrStreamUrl) => {
     if (!filenameOrStreamUrl) return null;

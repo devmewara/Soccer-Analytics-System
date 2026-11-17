@@ -11,15 +11,27 @@ import {
   Sparkles,
   Info,
   Film,
+  Cpu,
+  UserCheck,
+  Activity,
+  CheckCircle2,
+  AlertCircle,
+  ToggleLeft,
+  ToggleRight,
+  ShieldCheck,
 } from 'lucide-react';
 import DemoBanner from '../common/DemoBanner';
 import DemoBadge from '../common/DemoBadge';
 import PitchCanvas from '../common/PitchCanvas';
-import { api } from '../../api/client';
+import { api, SERVER_BASE_URL } from '../../api/client';
 
 export const MatchAnalysisView = ({
   data,
   activeVideo,
+  realAnalytics,
+  analysisStatus,
+  onStartAnalysis,
+  isStartingAnalysis,
   onSelectPlayer,
   onLoadDemoClip,
 }) => {
@@ -27,11 +39,14 @@ export const MatchAnalysisView = ({
   const [viewMode, setViewMode] = useState('split');
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [currentTime, setCurrentTime] = useState(14.3);
+  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(90);
   const [selectedZone, setSelectedZone] = useState('z_att_third');
   const [selectedEventId, setSelectedEventId] = useState('evt_1');
   const [selectedPlayerId, setSelectedPlayerId] = useState(17);
+
+  // Toggle between Annotated AI Video and Raw Video
+  const [showAnnotated, setShowAnnotated] = useState(true);
 
   // Overlay visibility toggles for DEMO mode
   const [showBoundingBoxes, setShowBoundingBoxes] = useState(true);
@@ -41,19 +56,22 @@ export const MatchAnalysisView = ({
 
   const videoRef = useRef(null);
 
-  const players = data?.players || [];
-  const events = data?.match_events || [];
-  const zones = data?.pitch_zones || [];
-  const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
-  const activeEvent = events.find((e) => e.id === selectedEventId) || events[0];
-
-  // Determine whether current video is user-uploaded or demo preview
   const isUserUploadedVideo = Boolean(activeVideo?.stream_url || activeVideo?.saved_filename);
-  const videoStreamUrl = activeVideo?.stream_url
-    ? api.getVideoStreamUrl(activeVideo.stream_url)
-    : null;
+  const hasRealAnalytics = Boolean(realAnalytics && realAnalytics.summary_metrics);
 
-  // Simulated playback timer for demo mode when no actual video file is streaming
+  // Determine active video URL
+  let videoStreamUrl = null;
+  if (isUserUploadedVideo) {
+    if (showAnnotated && realAnalytics?.video_metadata?.stream_url) {
+      videoStreamUrl = api.getVideoStreamUrl(realAnalytics.video_metadata.stream_url);
+    } else if (activeVideo.annotated_stream_url && showAnnotated) {
+      videoStreamUrl = api.getVideoStreamUrl(activeVideo.annotated_stream_url);
+    } else if (activeVideo.stream_url) {
+      videoStreamUrl = api.getVideoStreamUrl(activeVideo.stream_url);
+    }
+  }
+
+  // Playback timer for demo mode when no actual video file is streaming
   useEffect(() => {
     let interval = null;
     if (isPlaying && !videoStreamUrl) {
@@ -69,6 +87,15 @@ export const MatchAnalysisView = ({
     }
     return () => clearInterval(interval);
   }, [isPlaying, playbackSpeed, duration, videoStreamUrl]);
+
+  // Reset current time when stream URL changes
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+      setCurrentTime(0);
+      setIsPlaying(false);
+    }
+  }, [videoStreamUrl]);
 
   const handlePlayPause = () => {
     if (videoRef.current) {
@@ -98,15 +125,21 @@ export const MatchAnalysisView = ({
   };
 
   const formatTimecode = (seconds) => {
+    if (isNaN(seconds) || seconds < 0) return '00:00.0';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     const ms = Math.floor((seconds % 1) * 10);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms}`;
   };
 
+  const players = data?.players || [];
+  const events = data?.match_events || [];
+  const zones = data?.pitch_zones || [];
+  const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <DemoBanner />
+      {!isUserUploadedVideo && <DemoBanner />}
 
       {/* Studio Header & Layout Modes */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-[#253244]">
@@ -114,16 +147,25 @@ export const MatchAnalysisView = ({
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-white tracking-tight">Match Analysis Studio</h2>
             {isUserUploadedVideo ? (
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                RAW USER FOOTAGE
-              </span>
+              hasRealAnalytics ? (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>YOLO + BYTETRACK ANALYZED</span>
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  RAW FOOTAGE • READY FOR CV
+                </span>
+              )
             ) : (
               <DemoBadge label="DEMO SHOWCASE" />
             )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
             {isUserUploadedVideo
-              ? `Playing uploaded match file: ${activeVideo.original_filename || activeVideo.filename}`
+              ? hasRealAnalytics
+                ? `Processed with Ultralytics YOLO11n & ByteTrack: ${realAnalytics.summary_metrics.unique_players_count} players tracked across ${realAnalytics.summary_metrics.total_frames_analyzed} frames.`
+                : `Uploaded match video: ${activeVideo.original_filename || activeVideo.filename}`
               : 'Synchronized tactical video player, simulated detection overlays, and 2D calibrated pitch.'}
           </p>
         </div>
@@ -163,6 +205,57 @@ export const MatchAnalysisView = ({
         </div>
       </div>
 
+      {/* Real Computer Vision Summary Cards (Visible when real analytics is present) */}
+      {hasRealAnalytics && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Tracked Players</span>
+            <p className="text-xl font-bold text-emerald-400 font-mono mt-1">
+              {realAnalytics.summary_metrics.unique_players_count}
+              <span className="text-xs text-slate-500 font-normal ml-1">unique</span>
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Ball Detections</span>
+            <p className="text-xl font-bold text-amber-400 font-mono mt-1">
+              {realAnalytics.summary_metrics.total_ball_detections}
+              <span className="text-xs text-slate-500 font-normal ml-1">sightings</span>
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Avg Players/Frame</span>
+            <p className="text-xl font-bold text-white font-mono mt-1">
+              {realAnalytics.summary_metrics.avg_players_per_frame}
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Ball Coverage</span>
+            <p className="text-xl font-bold text-sky-400 font-mono mt-1">
+              {realAnalytics.summary_metrics.ball_detection_rate_pct}%
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Inference Speed</span>
+            <p className="text-xl font-bold text-emerald-400 font-mono mt-1">
+              {realAnalytics.summary_metrics.avg_inference_fps}
+              <span className="text-xs text-slate-500 font-normal ml-1">FPS</span>
+            </p>
+          </div>
+
+          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Frames Analyzed</span>
+            <p className="text-xl font-bold text-white font-mono mt-1">
+              {realAnalytics.summary_metrics.total_frames_analyzed}
+              <span className="text-xs text-slate-500 font-normal ml-1">frames</span>
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Main Workspace (Split / Focus Views) */}
       <div
         className={`grid gap-6 ${
@@ -180,13 +273,40 @@ export const MatchAnalysisView = ({
                 <div className="flex items-center gap-2">
                   <Film className="w-4 h-4 text-emerald-400" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                    {isUserUploadedVideo ? 'User Match Recording' : 'Tactical Cam Preview (Demo)'}
+                    {isUserUploadedVideo
+                      ? showAnnotated && hasRealAnalytics
+                        ? 'YOLO & ByteTrack Annotated Stream'
+                        : 'Raw Match Recording'
+                      : 'Tactical Cam Preview (Demo)'}
                   </span>
                 </div>
 
-                {/* Overlays Toggle: only shown if Demo Showcase, otherwise notice */}
+                {/* Overlays / Stream View Switcher */}
                 <div className="flex items-center gap-1.5">
-                  {!isUserUploadedVideo ? (
+                  {isUserUploadedVideo && hasRealAnalytics ? (
+                    <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-[10px] font-mono">
+                      <button
+                        onClick={() => setShowAnnotated(true)}
+                        className={`px-2 py-0.5 rounded transition-colors ${
+                          showAnnotated
+                            ? 'bg-emerald-500 text-black font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Annotated AI
+                      </button>
+                      <button
+                        onClick={() => setShowAnnotated(false)}
+                        className={`px-2 py-0.5 rounded transition-colors ${
+                          !showAnnotated
+                            ? 'bg-[#17212E] text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Raw
+                      </button>
+                    </div>
+                  ) : !isUserUploadedVideo ? (
                     <>
                       <button
                         onClick={() => setShowBoundingBoxes(!showBoundingBoxes)}
@@ -213,8 +333,8 @@ export const MatchAnalysisView = ({
                       </button>
                     </>
                   ) : (
-                    <span className="text-[10px] font-mono text-slate-400 bg-[#080B10] px-2 py-0.5 rounded border border-[#253244]">
-                      CV Overlays: Queued for Phase 2
+                    <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      Analysis Pending
                     </span>
                   )}
                 </div>
@@ -223,8 +343,9 @@ export const MatchAnalysisView = ({
               {/* Video Player Display Container */}
               <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-[#253244] flex items-center justify-center select-none">
                 {videoStreamUrl ? (
-                  /* Real HTML5 Video Player playing user uploaded video */
+                  /* Real HTML5 Video Player playing user uploaded video or annotated video */
                   <video
+                    key={videoStreamUrl}
                     ref={videoRef}
                     src={videoStreamUrl}
                     className="w-full h-full object-contain"
@@ -232,14 +353,16 @@ export const MatchAnalysisView = ({
                       if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
                     }}
                     onLoadedMetadata={() => {
-                      if (videoRef.current) setDuration(videoRef.current.duration || 90);
+                      if (videoRef.current && videoRef.current.duration) {
+                        setDuration(videoRef.current.duration);
+                      }
                     }}
                     onEnded={() => setIsPlaying(false)}
+                    controls={false}
                   />
                 ) : (
                   /* Simulated Tactical Broadcast Screen with football pitch canvas (Demo) */
                   <div className="relative w-full h-full bg-[#07150E] flex items-center justify-center overflow-hidden">
-                    {/* Simulated Camera Perspective lines */}
                     {showPitchCalibration && (
                       <div className="absolute inset-0 pointer-events-none opacity-30">
                         <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -250,7 +373,6 @@ export const MatchAnalysisView = ({
                       </div>
                     )}
 
-                    {/* Simulated YOLO Detection Bounding Boxes (ONLY IN DEMO MODE) */}
                     {showBoundingBoxes && (
                       <>
                         <div className="absolute left-[54%] top-[38%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
@@ -285,7 +407,6 @@ export const MatchAnalysisView = ({
                       </>
                     )}
 
-                    {/* Demo Showcase Watermark */}
                     <div className="absolute top-3 left-3 bg-[#080B10]/90 px-2.5 py-1 rounded text-[10px] font-mono text-slate-300 border border-[#253244]">
                       <span>Tactical Demonstration Preview</span>
                     </div>
@@ -306,8 +427,8 @@ export const MatchAnalysisView = ({
                 <input
                   type="range"
                   min="0"
-                  max={duration}
-                  step="0.1"
+                  max={duration || 1}
+                  step="0.05"
                   value={currentTime}
                   onChange={handleSeek}
                   className="w-full h-1.5 bg-[#080B10] rounded-lg appearance-none cursor-pointer accent-emerald-500"
@@ -347,7 +468,10 @@ export const MatchAnalysisView = ({
                   {[0.5, 1.0, 2.0].map((rate) => (
                     <button
                       key={rate}
-                      onClick={() => setPlaybackSpeed(rate)}
+                      onClick={() => {
+                        setPlaybackSpeed(rate);
+                        if (videoRef.current) videoRef.current.playbackRate = rate;
+                      }}
                       className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
                         playbackSpeed === rate
                           ? 'bg-emerald-500 text-black'
@@ -363,7 +487,7 @@ export const MatchAnalysisView = ({
           </div>
         )}
 
-        {/* Panel 2: Interactive 2D Homography Pitch */}
+        {/* Panel 2: Interactive 2D Pitch / Telemetry Overview */}
         {(viewMode === 'split' || viewMode === 'pitch') && (
           <div className="bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between">
             <div>
@@ -376,16 +500,24 @@ export const MatchAnalysisView = ({
                   </span>
                 </div>
 
-                <button
-                  onClick={() => setShowZoneOverlay(!showZoneOverlay)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                    showZoneOverlay
-                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-[#17212E] text-slate-400 border border-[#253244]'
-                  }`}
-                >
-                  Tactical Thirds: {showZoneOverlay ? 'ON' : 'OFF'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {isUserUploadedVideo ? (
+                    <span className="text-[10px] font-mono text-slate-400 bg-[#080B10] px-2 py-0.5 rounded border border-[#253244]">
+                      Homography: Pending Calibration
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setShowZoneOverlay(!showZoneOverlay)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                        showZoneOverlay
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-[#17212E] text-slate-400 border border-[#253244]'
+                      }`}
+                    >
+                      Tactical Thirds: {showZoneOverlay ? 'ON' : 'OFF'}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* 2D Pitch Canvas */}
@@ -395,127 +527,193 @@ export const MatchAnalysisView = ({
                 onZoneClick={(zoneId) => setSelectedZone(zoneId)}
                 heightClass={viewMode === 'pitch' ? 'h-[460px]' : 'h-72 sm:h-80 md:h-[340px]'}
               >
-                {/* 22 Player Nodes on Calibrated Pitch (Modeled Sample Data) */}
-                {players.map((p) => {
-                  const isSelected = p.id === selectedPlayerId;
-                  const isTeamA = p.team_id === 'man_blue';
+                {!isUserUploadedVideo ? (
+                  /* 22 Player Nodes on Calibrated Pitch (Modeled Sample Data) */
+                  players.map((p) => {
+                    const isSelected = p.id === selectedPlayerId;
+                    const isTeamA = p.team_id === 'man_blue';
 
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPlayerId(p.id);
-                        if (onSelectPlayer) onSelectPlayer(p.id);
-                      }}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer pointer-events-auto transition-transform hover:scale-125 group z-20"
-                      style={{ left: `${p.pitch_x}%`, top: `${p.pitch_y}%` }}
-                    >
+                    return (
                       <div
-                        className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-mono font-bold text-[9px] sm:text-[10px] text-black shadow transition-all ${
-                          isTeamA
-                            ? 'bg-sky-400 border border-white'
-                            : 'bg-rose-500 text-white border border-white'
-                        } ${isSelected ? 'ring-2 ring-emerald-400 scale-125' : ''}`}
+                        key={p.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPlayerId(p.id);
+                          if (onSelectPlayer) onSelectPlayer(p.id);
+                        }}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer pointer-events-auto transition-transform hover:scale-125 group z-20"
+                        style={{ left: `${p.pitch_x}%`, top: `${p.pitch_y}%` }}
                       >
-                        {p.jersey_number}
-                      </div>
+                        <div
+                          className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-mono font-bold text-[9px] sm:text-[10px] text-black shadow transition-all ${
+                            isTeamA
+                              ? 'bg-sky-400 border border-white'
+                              : 'bg-rose-500 text-white border border-white'
+                          } ${isSelected ? 'ring-2 ring-emerald-400 scale-125' : ''}`}
+                        >
+                          {p.jersey_number}
+                        </div>
 
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-[#080B10] text-white text-[9px] font-mono px-2 py-0.5 rounded border border-[#253244] whitespace-nowrap z-30">
-                        {p.short_name} (Sample)
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-[#080B10] text-white text-[9px] font-mono px-2 py-0.5 rounded border border-[#253244] whitespace-nowrap z-30">
+                          {p.short_name} (Sample)
+                        </div>
                       </div>
+                    );
+                  })
+                ) : (
+                  /* User uploaded footage overlay note on pitch */
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
+                    <div className="bg-[#080B10]/90 border border-[#253244] rounded-xl p-4 max-w-sm text-center">
+                      <p className="text-xs font-semibold text-white">2D Pitch Projection Awaiting Homography</p>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                        Player pixel coordinates from YOLO & ByteTrack will be mapped onto this 2D FIFA coordinate system once 4-point pitch corner homography calibration is computed.
+                      </p>
                     </div>
-                  );
-                })}
+                  </div>
+                )}
 
-                {/* Match Ball Marker */}
-                <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm shadow-amber-400"></div>
-                </div>
+                {/* Match Ball Marker (Demo mode) */}
+                {!isUserUploadedVideo && (
+                  <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm shadow-amber-400"></div>
+                  </div>
+                )}
               </PitchCanvas>
 
-              {/* Selected Zone Analysis Summary */}
+              {/* Selected Zone Analysis Summary or Real Tracking Note */}
               <div className="mt-4 p-3.5 rounded-xl bg-[#080B10] border border-[#253244] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-white font-mono uppercase tracking-wide">
-                      {activeZoneObj.label}
+                      {isUserUploadedVideo ? 'Computer Vision Telemetry' : activeZoneObj.label}
                     </span>
-                    <DemoBadge size="xs" label="SAMPLE DATA" />
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {isUserUploadedVideo ? 'ACTIVE ENGINE' : 'SAMPLE DATA'}
+                    </span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                    {activeZoneObj.desc}
+                    {isUserUploadedVideo
+                      ? 'YOLO11n object detection detects players (COCO 0) and the football (COCO 32). ByteTrack assigns persistent tracking IDs across consecutive frames.'
+                      : activeZoneObj.desc}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-4 text-xs font-mono shrink-0">
-                  <div>
-                    <span className="text-slate-500 block text-[9px]">PASS VOLUME</span>
-                    <span className="text-emerald-400 font-bold">{activeZoneObj.passes_completed}</span>
+                {!isUserUploadedVideo && (
+                  <div className="flex items-center gap-4 text-xs font-mono shrink-0">
+                    <div>
+                      <span className="text-slate-500 block text-[9px]">PASS VOLUME</span>
+                      <span className="text-emerald-400 font-bold">{activeZoneObj.passes_completed}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[9px]">TIME IN ZONE</span>
+                      <span className="text-sky-400 font-bold">{activeZoneObj.possession_share_pct}%</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-slate-500 block text-[9px]">TIME IN ZONE</span>
-                    <span className="text-sky-400 font-bold">{activeZoneObj.possession_share_pct}%</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Match Events Timeline Panel (Modeled Sample Events) */}
-      <div className="bg-[#101722] border border-[#253244] rounded-2xl p-5 shadow-panel">
-        <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3.5">
-          <div>
-            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-              <Clock className="w-4 h-4 text-emerald-400" />
-              <span>Match Events Log (Demonstration Timeline)</span>
-              <DemoBadge size="xs" label="SAMPLE EVENTS" />
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Simulated match moments illustrating tactical event timeline scrubbing.
-            </p>
+      {/* Real Tracked Players Quick Roster (If real analytics available) */}
+      {hasRealAnalytics && realAnalytics.players && realAnalytics.players.length > 0 && (
+        <div className="bg-[#101722] border border-[#253244] rounded-2xl p-5 shadow-panel">
+          <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3.5">
+            <div>
+              <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-emerald-400" />
+                <span>Tracked Player Instances (ByteTrack IDs)</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Individual persistent player tracklets detected across video frames.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-emerald-400 font-bold">
+              {realAnalytics.players.length} Players Tracked
+            </span>
           </div>
-          <span className="text-[10px] font-mono text-slate-400">
-            {events.length} Milestones
-          </span>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {events.map((evt) => {
-            const isSelected = evt.id === selectedEventId;
-            return (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+            {realAnalytics.players.map((p) => (
               <div
-                key={evt.id}
-                onClick={() => {
-                  setSelectedEventId(evt.id);
-                  setCurrentTime(evt.minute);
-                  if (videoRef.current) videoRef.current.currentTime = evt.minute;
-                }}
-                className={`p-3 rounded-xl border text-left cursor-pointer transition-colors ${
-                  isSelected
-                    ? 'bg-[#17212E] border-emerald-500/50'
-                    : 'bg-[#080B10] border-[#253244] hover:border-slate-600'
-                }`}
+                key={p.track_id}
+                onClick={() => onSelectPlayer && onSelectPlayer(p.track_id)}
+                className="p-3 bg-[#080B10] border border-[#253244] hover:border-emerald-500/50 rounded-xl cursor-pointer transition-colors"
               >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
-                    {evt.minute}' MIN
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-mono font-bold text-emerald-400">
+                    #{p.track_id}
                   </span>
-                  <span className="text-[9px] font-mono uppercase text-slate-400">
-                    {evt.type}
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {p.visibility_duration_seconds}s
                   </span>
                 </div>
-                <p className="font-semibold text-white text-xs">{evt.player}</p>
-                <p className="text-[10px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                  {evt.description}
-                </p>
+                <p className="text-xs font-semibold text-white truncate">{p.label}</p>
+                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mt-1.5 pt-1.5 border-t border-[#17212E]">
+                  <span>{p.detections_count} frames</span>
+                  <span className="text-emerald-400">{(p.avg_confidence * 100).toFixed(0)}%</span>
+                </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Match Events Timeline Panel (For Demo Mode) */}
+      {!isUserUploadedVideo && (
+        <div className="bg-[#101722] border border-[#253244] rounded-2xl p-5 shadow-panel">
+          <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3.5">
+            <div>
+              <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                <span>Match Events Log (Demonstration Timeline)</span>
+                <DemoBadge size="xs" label="SAMPLE EVENTS" />
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Simulated match moments illustrating tactical event timeline scrubbing.
+              </p>
+            </div>
+            <span className="text-[10px] font-mono text-slate-400">
+              {events.length} Milestones
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {events.map((evt) => {
+              const isSelected = evt.id === selectedEventId;
+              return (
+                <div
+                  key={evt.id}
+                  onClick={() => {
+                    setSelectedEventId(evt.id);
+                    setCurrentTime(evt.minute);
+                    if (videoRef.current) videoRef.current.currentTime = evt.minute;
+                  }}
+                  className={`p-3 rounded-xl border text-left cursor-pointer transition-colors ${
+                    isSelected
+                      ? 'bg-[#17212E] border-emerald-500/50'
+                      : 'bg-[#080B10] border-[#253244] hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                      {evt.minute}' MIN
+                    </span>
+                    <span className="text-[9px] font-mono uppercase text-slate-400">
+                      {evt.type}
+                    </span>
+                  </div>
+                  <p className="font-semibold text-white text-xs">{evt.player}</p>
+                  <p className="text-[10px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                    {evt.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -36,7 +36,7 @@ async def root():
         "status": "online",
         "documentation": "/docs",
         "api_prefix": "/api",
-        "cv_phase": "Phase 1 - Project Foundation Only"
+        "cv_phase": "Phase 2 - Real Computer Vision (YOLO11n + ByteTrack)"
     }
 
 
