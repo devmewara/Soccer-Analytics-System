@@ -8,6 +8,7 @@ class VideoUploadResponse(BaseModel):
     file_size_bytes: int = Field(..., description="File size in bytes")
     file_size_formatted: str = Field(..., description="Human-readable file size")
     status: str = Field("ready_for_analysis", description="Current pipeline processing status")
+    stream_url: Optional[str] = Field(None, description="Static stream/playback URL")
     uploaded_at: str = Field(..., description="Upload timestamp")
     message: str = Field(
         "Video received and securely saved. Processing queue initialized. Computer vision detection (YOLO) will process this in Phase 2."

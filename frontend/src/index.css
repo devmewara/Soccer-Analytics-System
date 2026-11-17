@@ -4,47 +4,64 @@
 
 @layer base {
   body {
-    background-color: #070A0F;
+    background-color: #05070B;
     color: #F1F5F9;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
   }
 }
 
-/* Custom subtle scrollbar */
+/* Custom sleek scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B101B;
+  background: #070A0F;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1E293B;
-  border-radius: 3px;
+  background: #1E2638;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #2D3A52;
 }
 
-/* Pitch grass stripes background pattern */
-.pitch-stripes {
-  background-image: repeating-linear-gradient(
+/* Pitch Grass Alternating Mowed Stripes */
+.pitch-stripes-bg {
+  background: repeating-linear-gradient(
     90deg,
-    rgba(16, 185, 129, 0.02) 0px,
-    rgba(16, 185, 129, 0.02) 40px,
-    transparent 40px,
-    transparent 80px
+    #071A10 0px,
+    #071A10 36px,
+    #0A2115 36px,
+    #0A2115 72px
   );
 }
 
-/* Football pitch grid lines */
-.pitch-canvas {
-  background-color: #0d2818;
+/* Subtle tactical grid background */
+.tactical-grid-bg {
   background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
-  background-size: 40px 40px;
+    linear-gradient(rgba(30, 38, 56, 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 38, 56, 0.4) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Glass panel effect */
+.glass-panel {
+  background: rgba(10, 14, 23, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Micro pulse animation for live CV indicators */
+@keyframes pulseSlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.97); }
+}
+
+.animate-pulse-slow {
+  animation: pulseSlow 3s ease-in-out infinite;
 }

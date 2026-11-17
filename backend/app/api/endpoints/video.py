@@ -87,6 +87,7 @@ async def upload_video(file: UploadFile = File(...)):
         file_size_bytes=bytes_written,
         file_size_formatted=format_bytes(bytes_written),
         status="ready_for_analysis",
+        stream_url=f"/uploads/{safe_filename}",
         uploaded_at=datetime.now(timezone.utc).isoformat(),
         message="Video uploaded successfully and stored in backend/uploads. Awaiting CV Phase 2 for YOLO & tracking inference."
     )
@@ -104,6 +105,7 @@ async def list_recent_videos():
                 stat = item.stat()
                 videos.append({
                     "filename": item.name,
+                    "stream_url": f"/uploads/{item.name}",
                     "file_size_formatted": format_bytes(stat.st_size),
                     "created_at": datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
                     "status": "Ready for CV Pipeline"

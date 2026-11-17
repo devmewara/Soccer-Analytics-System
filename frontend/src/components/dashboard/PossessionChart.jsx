@@ -37,22 +37,26 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
       {
         label: teamA?.team_name || 'Manchester Blue (Demo)',
         data: teamAData,
-        borderColor: '#38BDF8', // Cyan
-        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+        borderColor: '#38BDF8', // Sky Blue
+        backgroundColor: 'rgba(56, 189, 248, 0.12)',
         tension: 0.4,
         fill: true,
         pointBackgroundColor: '#38BDF8',
+        pointBorderColor: '#05070B',
+        pointBorderWidth: 2,
         pointRadius: 4,
         pointHoverRadius: 6,
       },
       {
         label: teamB?.team_name || 'London Red (Demo)',
         data: teamBData,
-        borderColor: '#F43F5E', // Red
-        backgroundColor: 'rgba(244, 63, 94, 0.05)',
+        borderColor: '#EF4444', // Crimson Red
+        backgroundColor: 'rgba(239, 68, 68, 0.06)',
         tension: 0.4,
         fill: true,
-        pointBackgroundColor: '#F43F5E',
+        pointBackgroundColor: '#EF4444',
+        pointBorderColor: '#05070B',
+        pointBorderWidth: 2,
         pointRadius: 4,
         pointHoverRadius: 6,
       },
@@ -62,6 +66,10 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
     plugins: {
       legend: {
         labels: {
@@ -73,10 +81,13 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
       },
       tooltip: {
         backgroundColor: '#0F172A',
-        borderColor: '#334155',
+        borderColor: '#1E2638',
         borderWidth: 1,
         titleColor: '#F8FAFC',
         bodyColor: '#94A3B8',
+        titleFont: { family: 'JetBrains Mono', size: 11 },
+        bodyFont: { family: 'Inter', size: 12 },
+        padding: 10,
         callbacks: {
           label: (context) => ` ${context.dataset.label}: ${context.parsed.y}%`,
         },
@@ -84,13 +95,13 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
     },
     scales: {
       x: {
-        grid: { color: 'rgba(51, 65, 85, 0.25)' },
+        grid: { color: 'rgba(30, 38, 56, 0.5)' },
         ticks: { color: '#64748B', font: { family: 'JetBrains Mono', size: 11 } },
       },
       y: {
         min: 0,
         max: 100,
-        grid: { color: 'rgba(51, 65, 85, 0.25)' },
+        grid: { color: 'rgba(30, 38, 56, 0.5)' },
         ticks: {
           color: '#64748B',
           font: { family: 'JetBrains Mono', size: 11 },
@@ -101,7 +112,7 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
   };
 
   const comparisonData = {
-    labels: ['Pass Accuracy %', 'Total Passes / 10', 'Distance (km)', 'High Runs / 2'],
+    labels: ['Pass Accuracy %', 'Pass Volume / 10', 'Distance (km)', 'High Runs / 2'],
     datasets: [
       {
         label: teamA?.team_name || 'Manchester Blue',
@@ -111,7 +122,7 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
           teamA?.total_distance_km || 112.4,
           (teamA?.high_intensity_runs || 142) / 2,
         ],
-        backgroundColor: 'rgba(56, 189, 248, 0.8)',
+        backgroundColor: 'rgba(56, 189, 248, 0.85)',
         borderRadius: 6,
       },
       {
@@ -122,7 +133,7 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
           teamB?.total_distance_km || 116.1,
           (teamB?.high_intensity_runs || 156) / 2,
         ],
-        backgroundColor: 'rgba(244, 63, 94, 0.8)',
+        backgroundColor: 'rgba(239, 68, 68, 0.85)',
         borderRadius: 6,
       },
     ],
@@ -142,10 +153,12 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
       },
       tooltip: {
         backgroundColor: '#0F172A',
-        borderColor: '#334155',
+        borderColor: '#1E2638',
         borderWidth: 1,
         titleColor: '#F8FAFC',
         bodyColor: '#94A3B8',
+        titleFont: { family: 'JetBrains Mono', size: 11 },
+        bodyFont: { family: 'Inter', size: 12 },
       },
     },
     scales: {
@@ -154,7 +167,7 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
         ticks: { color: '#64748B', font: { family: 'Inter', size: 11 } },
       },
       y: {
-        grid: { color: 'rgba(51, 65, 85, 0.25)' },
+        grid: { color: 'rgba(30, 38, 56, 0.5)' },
         ticks: { color: '#64748B', font: { family: 'JetBrains Mono', size: 11 } },
       },
     },
@@ -162,18 +175,20 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Possession Trend Line */}
-      <div className="bg-[#0D131F] border border-slate-800 rounded-2xl p-5 shadow-lg shadow-black/30">
+      {/* Possession Flow Line Chart */}
+      <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-5 shadow-xl shadow-black/40">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-white tracking-tight">Possession Flow Trend</h3>
+              <h3 className="text-sm font-bold text-white tracking-tight">Possession Momentum Flow</h3>
               <DemoBadge size="xs" />
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">15-minute interval dominance (Simulated demo curve)</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              15-minute match intervals (Simulated game dominance curve)
+            </p>
           </div>
-          <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-            90 Mins
+          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+            90 Mins Active
           </span>
         </div>
         <div className="h-64">
@@ -181,17 +196,19 @@ export const PossessionChart = ({ possessionTrend = [], teamA, teamB }) => {
         </div>
       </div>
 
-      {/* Team Metric Comparison Bar Chart */}
-      <div className="bg-[#0D131F] border border-slate-800 rounded-2xl p-5 shadow-lg shadow-black/30">
+      {/* Head-to-Head Comparative Metric Chart */}
+      <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-5 shadow-xl shadow-black/40">
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-white tracking-tight">Team Performance Benchmark</h3>
               <DemoBadge size="xs" />
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">Normalized comparative metrics (Simulated placeholder data)</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Comparative volume & physical exertion (Simulated demo metrics)
+            </p>
           </div>
-          <span className="text-[11px] font-mono text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+          <span className="text-[10px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded">
             Head-to-Head
           </span>
         </div>

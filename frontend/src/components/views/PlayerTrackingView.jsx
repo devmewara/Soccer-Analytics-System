@@ -1,214 +1,354 @@
 import React, { useState } from 'react';
-import { UserCheck, Cpu, GitBranch, ArrowUpRight, ShieldCheck, Zap } from 'lucide-react';
+import {
+  UserCheck,
+  Cpu,
+  Activity,
+  Zap,
+  ShieldCheck,
+  Search,
+  Filter,
+  ArrowRight,
+  ChevronRight,
+  TrendingUp,
+  Compass,
+  Layers,
+  Scale,
+} from 'lucide-react';
 import DemoBanner from '../common/DemoBanner';
 import DemoBadge from '../common/DemoBadge';
+import PitchCanvas from '../common/PitchCanvas';
+import { Line } from 'react-chartjs-2';
 
-export const PlayerTrackingView = () => {
-  const [selectedPlayer, setSelectedPlayer] = useState(17);
+export const PlayerTrackingView = ({ data, initialSelectedPlayerId = 17 }) => {
+  const [selectedPlayerId, setSelectedPlayerId] = useState(initialSelectedPlayerId);
+  const [comparePlayerId, setComparePlayerId] = useState(8);
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [teamFilter, setTeamFilter] = useState('all'); // 'all' | 'man_blue' | 'lon_red'
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const players = [
-    {
-      id: 17,
-      name: "Kevin De Bruyne",
-      jersey: 17,
-      position: "Attacking Midfielder",
-      team: "Manchester Blue",
-      distanceKm: 11.8,
-      topSpeedKmh: 32.4,
-      currentSpeedKmh: 24.1,
-      sprints: 24,
-      trackletConfidence: "98.4%",
-      activeFrames: "5,400 / 5,400",
-    },
-    {
-      id: 7,
-      name: "Bukayo Saka",
-      jersey: 7,
-      position: "Right Winger",
-      team: "London Red",
-      distanceKm: 10.9,
-      topSpeedKmh: 33.8,
-      currentSpeedKmh: 18.2,
-      sprints: 28,
-      trackletConfidence: "97.1%",
-      activeFrames: "5,280 / 5,400",
-    },
-    {
-      id: 9,
-      name: "Erling Haaland",
-      jersey: 9,
-      position: "Center Forward",
-      team: "Manchester Blue",
-      distanceKm: 9.4,
-      topSpeedKmh: 34.2,
-      currentSpeedKmh: 29.5,
-      sprints: 19,
-      trackletConfidence: "99.0%",
-      activeFrames: "5,400 / 5,400",
-    },
-    {
-      id: 8,
-      name: "Martin Odegaard",
-      jersey: 8,
-      position: "Central Midfielder",
-      team: "London Red",
-      distanceKm: 11.6,
-      topSpeedKmh: 31.9,
-      currentSpeedKmh: 21.0,
-      sprints: 21,
-      trackletConfidence: "96.8%",
-      activeFrames: "5,350 / 5,400",
-    },
-  ];
+  const players = data?.players || [];
 
-  const current = players.find((p) => p.id === selectedPlayer) || players[0];
+  // Filter players
+  const filteredPlayers = players.filter((p) => {
+    const matchesTeam = teamFilter === 'all' || p.team_id === teamFilter;
+    const matchesSearch =
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.jersey_number.toString().includes(searchQuery) ||
+      p.track_id.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesTeam && matchesSearch;
+  });
+
+  const current = players.find((p) => p.id === selectedPlayerId) || players[0];
+  const compareTarget = players.find((p) => p.id === comparePlayerId) || players[1];
+
+  // Chart data for speed profile
+  const speedChartData = {
+    labels: ["10'", "20'", "30'", "40'", "50'", "60'", "70'", "80'"],
+    datasets: [
+      {
+        label: `${current.name} (${current.team_name})`,
+        data: current.speed_profile || [12, 18, 24, 30, 22, 19, 25, 27],
+        borderColor: current.team_id === 'man_blue' ? '#38BDF8' : '#EF4444',
+        backgroundColor: current.team_id === 'man_blue' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+        tension: 0.4,
+        fill: true,
+        pointBackgroundColor: current.team_id === 'man_blue' ? '#38BDF8' : '#EF4444',
+        pointRadius: 4,
+      },
+      ...(isCompareMode
+        ? [
+            {
+              label: `${compareTarget.name} (${compareTarget.team_name})`,
+              data: compareTarget.speed_profile || [10, 15, 22, 28, 20, 16, 21, 23],
+              borderColor: compareTarget.team_id === 'man_blue' ? '#38BDF8' : '#EF4444',
+              backgroundColor: 'transparent',
+              borderDash: [5, 5],
+              tension: 0.4,
+              pointRadius: 4,
+            },
+          ]
+        : []),
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        labels: { color: '#94A3B8', font: { family: 'Inter', size: 11 } },
+      },
+      tooltip: {
+        backgroundColor: '#0F172A',
+        borderColor: '#1E2638',
+        borderWidth: 1,
+        titleColor: '#F8FAFC',
+        bodyColor: '#94A3B8',
+        callbacks: {
+          label: (context) => ` Speed: ${context.parsed.y} km/h`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(30, 38, 56, 0.4)' },
+        ticks: { color: '#64748B', font: { family: 'JetBrains Mono', size: 10 } },
+      },
+      y: {
+        grid: { color: 'rgba(30, 38, 56, 0.4)' },
+        ticks: {
+          color: '#64748B',
+          font: { family: 'JetBrains Mono', size: 10 },
+          callback: (val) => `${val} km/h`,
+        },
+      },
+    },
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <DemoBanner />
 
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-[#1E2638]">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-white tracking-tight">Player Tracking & Telemetry</h2>
+            <h2 className="text-xl font-bold text-white tracking-tight">Player MOT Tracking & Telemetry</h2>
             <DemoBadge />
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Multi-Object Tracking (MOT) metrics calculated across match footage. Integrates YOLOv8 + ByteTrack in Phase 2.
+          <p className="text-xs text-slate-400 mt-0.5">
+            Multi-Object Tracking (ByteTrack) kinematics, calibrated coordinates, speed curves, and trails.
           </p>
         </div>
 
-        <span className="text-xs font-mono bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-          <Cpu className="w-3.5 h-3.5" />
-          Tracker: ByteTrack Module (Awaiting Phase 2)
-        </span>
+        {/* Compare Mode Toggle */}
+        <button
+          onClick={() => setIsCompareMode(!isCompareMode)}
+          className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium flex items-center gap-1.5 transition-all ${
+            isCompareMode
+              ? 'bg-emerald-500 text-black font-bold shadow-md shadow-emerald-500/20'
+              : 'bg-slate-900 text-slate-300 border border-slate-700 hover:text-white'
+          }`}
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>Compare Mode: {isCompareMode ? 'ON' : 'OFF'}</span>
+        </button>
       </div>
 
-      {/* CV Tracking Architecture Pipeline Preview */}
-      <div className="bg-[#0D131F] border border-slate-800 rounded-2xl p-5 shadow-lg shadow-black/30">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono mb-4">
-          Tracking Architecture Workflow (Planned Phase 2 Engine)
-        </h3>
+      {/* Main Workspace Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Player Selection & Filter List (4 cols) */}
+        <div className="lg:col-span-4 bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-4 sm:p-5 shadow-2xl shadow-black/60 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-[#1E2638]">
+              <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                Tracked Player Roster
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400">
+                {filteredPlayers.length} Active
+              </span>
+            </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
-            <span className="text-[10px] font-mono text-emerald-400 block mb-1">Step 01</span>
-            <p className="font-semibold text-white">YOLOv8 Detection</p>
-            <p className="text-[11px] text-slate-400 mt-1">Bounding boxes for players, ref & ball per frame.</p>
-          </div>
-
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
-            <span className="text-[10px] font-mono text-sky-400 block mb-1">Step 02</span>
-            <p className="font-semibold text-white">ByteTrack MOT</p>
-            <p className="text-[11px] text-slate-400 mt-1">Kalman filter state prediction & IoU association.</p>
-          </div>
-
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
-            <span className="text-[10px] font-mono text-amber-400 block mb-1">Step 03</span>
-            <p className="font-semibold text-white">Pitch Homography</p>
-            <p className="text-[11px] text-slate-400 mt-1">Perspective transform to metric 2D coordinate pitch.</p>
-          </div>
-
-          <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
-            <span className="text-[10px] font-mono text-purple-400 block mb-1">Step 04</span>
-            <p className="font-semibold text-white">Kinematics Engine</p>
-            <p className="text-[11px] text-slate-400 mt-1">Velocity, acceleration, sprints & heat density.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Player Telemetry Cards & Selected Player Detail */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Player Selector List */}
-        <div className="bg-[#0D131F] border border-slate-800 rounded-2xl p-5 shadow-lg shadow-black/30">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono mb-3">
-            Tracked Tracklets
-          </h3>
-          <div className="space-y-2">
-            {players.map((p) => (
+            {/* Team Filter Pills */}
+            <div className="mt-3 flex gap-1 p-1 bg-[#080C14] rounded-xl border border-[#1E2638] text-[11px] font-mono">
               <button
-                key={p.id}
-                onClick={() => setSelectedPlayer(p.id)}
-                className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                  p.id === selectedPlayer
-                    ? 'bg-emerald-500/15 border-emerald-500/40 shadow-sm shadow-emerald-500/20'
-                    : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                onClick={() => setTeamFilter('all')}
+                className={`flex-1 py-1 rounded-lg text-center transition-colors ${
+                  teamFilter === 'all' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <span className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 font-mono font-bold text-xs flex items-center justify-center">
-                    {p.jersey}
-                  </span>
-                  <div>
-                    <p className="text-xs font-semibold text-white">{p.name}</p>
-                    <p className="text-[10px] text-slate-400">{p.position}</p>
-                  </div>
-                </div>
-                <div className="text-right font-mono text-xs">
-                  <span className="text-emerald-400 font-bold">{p.distanceKm} km</span>
-                  <span className="block text-[10px] text-slate-400">{p.topSpeedKmh} km/h</span>
-                </div>
+                All
               </button>
-            ))}
+              <button
+                onClick={() => setTeamFilter('man_blue')}
+                className={`flex-1 py-1 rounded-lg text-center transition-colors ${
+                  teamFilter === 'man_blue' ? 'bg-sky-500/20 text-sky-300 font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Man Blue
+              </button>
+              <button
+                onClick={() => setTeamFilter('lon_red')}
+                className={`flex-1 py-1 rounded-lg text-center transition-colors ${
+                  teamFilter === 'lon_red' ? 'bg-rose-500/20 text-rose-300 font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                London Red
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="mt-3 relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search by name, jersey, or TRK ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-[#080C14] border border-[#1E2638] text-xs text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+
+            {/* Roster Scroll List */}
+            <div className="mt-3 space-y-2 max-h-[460px] overflow-y-auto pr-1">
+              {filteredPlayers.map((p) => {
+                const isSelected = p.id === selectedPlayerId;
+                const isTeamA = p.team_id === 'man_blue';
+
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedPlayerId(p.id)}
+                    className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      isSelected
+                        ? 'bg-emerald-500/15 border-emerald-500/50 shadow-sm shadow-emerald-500/20'
+                        : 'bg-[#0E1524]/60 border-[#1E2638] hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs text-black ${
+                          isTeamA ? 'bg-sky-400' : 'bg-rose-500 text-white'
+                        }`}
+                      >
+                        {p.jersey_number}
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold text-white truncate max-w-[140px]">{p.name}</p>
+                        <span className="text-[10px] font-mono text-slate-400 block -mt-0.5">
+                          {p.track_id} • {p.position}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-right font-mono text-xs shrink-0">
+                      <span className="text-emerald-400 font-bold block">{p.distance_km} km</span>
+                      <span className="text-[10px] text-slate-400">{p.top_speed_kmh} km/h</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        {/* Selected Player Deep Telemetry */}
-        <div className="lg:col-span-2 bg-[#0D131F] border border-slate-800 rounded-2xl p-6 shadow-lg shadow-black/30">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">
-                  #{current.jersey}
-                </span>
-                <h3 className="text-base font-bold text-white">{current.name}</h3>
-                <DemoBadge size="xs" />
+        {/* Right Column: Player Movement Trails Pitch & Kinematics Console (8 cols) */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Movement Trail on Calibrated 2D Pitch */}
+          <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-5 shadow-2xl shadow-black/60">
+            <div className="flex items-center justify-between pb-3 border-b border-[#1E2638] mb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <h3 className="text-sm font-bold text-white tracking-tight">
+                    {current.name} (#{current.jersey_number}) • Tactical Movement Trail
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 font-mono">
+                  Track ID: <strong className="text-emerald-400">{current.track_id}</strong> • Role: {current.role}
+                </p>
               </div>
-              <p className="text-xs text-slate-400 mt-1">{current.position} • {current.team}</p>
+
+              <span className="text-[10px] font-mono text-slate-300 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded">
+                Calibrated Metric Coords: ({((current.pitch_x / 100) * 105).toFixed(1)}m, {((current.pitch_y / 100) * 68).toFixed(1)}m)
+              </span>
             </div>
 
-            <span className="text-xs font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-1 rounded">
-              Tracklet #{current.id}
-            </span>
+            {/* Pitch with SVG movement trail */}
+            <PitchCanvas heightClass="h-72 sm:h-80 md:h-[340px]">
+              {/* Movement Trail Line */}
+              {current.trail && current.trail.length > 1 && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
+                  <polyline
+                    points={current.trail.map((pt) => `${pt.x}%,${pt.y}%`).join(' ')}
+                    fill="none"
+                    stroke={current.team_id === 'man_blue' ? '#38BDF8' : '#EF4444'}
+                    strokeWidth="2.5"
+                    strokeDasharray="4,2"
+                    strokeOpacity="0.8"
+                  />
+                  {current.trail.map((pt, idx) => (
+                    <circle
+                      key={idx}
+                      cx={`${pt.x}%`}
+                      cy={`${pt.y}%`}
+                      r="3"
+                      fill={current.team_id === 'man_blue' ? '#38BDF8' : '#EF4444'}
+                      fillOpacity="0.7"
+                    />
+                  ))}
+                </svg>
+              )}
+
+              {/* Current Player Anchor Marker */}
+              <div
+                className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto z-20"
+                style={{ left: `${current.pitch_x}%`, top: `${current.pitch_y}%` }}
+              >
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center font-mono font-bold text-xs text-black shadow-lg ring-4 ring-emerald-400/50 ${
+                    current.team_id === 'man_blue' ? 'bg-sky-400' : 'bg-rose-500 text-white'
+                  }`}
+                >
+                  {current.jersey_number}
+                </div>
+              </div>
+            </PitchCanvas>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-6">
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              <span className="text-[10px] font-mono uppercase text-slate-400">Total Distance</span>
-              <p className="text-xl font-extrabold text-white font-mono mt-1">{current.distanceKm} <span className="text-xs font-normal text-emerald-400">km</span></p>
+          {/* Detailed Kinematics Telemetry Grid */}
+          <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-5 shadow-2xl shadow-black/60">
+            <div className="flex items-center justify-between pb-3 border-b border-[#1E2638] mb-4">
+              <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                Kinematics & Computer Vision State
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                Kalman State: Stable
+              </span>
             </div>
 
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              <span className="text-[10px] font-mono uppercase text-slate-400">Peak Velocity</span>
-              <p className="text-xl font-extrabold text-white font-mono mt-1">{current.topSpeedKmh} <span className="text-xs font-normal text-emerald-400">km/h</span></p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-[#080C14] border border-[#1E2638] rounded-xl">
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">Total Distance</span>
+                <p className="text-xl font-extrabold text-white font-mono mt-1">
+                  {current.distance_km} <span className="text-xs font-normal text-emerald-400">km</span>
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#080C14] border border-[#1E2638] rounded-xl">
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">Peak Speed</span>
+                <p className="text-xl font-extrabold text-white font-mono mt-1">
+                  {current.top_speed_kmh} <span className="text-xs font-normal text-emerald-400">km/h</span>
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#080C14] border border-[#1E2638] rounded-xl">
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">High Sprints</span>
+                <p className="text-xl font-extrabold text-white font-mono mt-1">
+                  {current.sprints} <span className="text-xs font-normal text-emerald-400">runs</span>
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#080C14] border border-[#1E2638] rounded-xl">
+                <span className="text-[9px] font-mono text-slate-400 block uppercase">Pass Accuracy</span>
+                <p className="text-xl font-extrabold text-white font-mono mt-1">
+                  {current.pass_accuracy}%
+                </p>
+              </div>
             </div>
 
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              <span className="text-[10px] font-mono uppercase text-slate-400">Sprint Counts</span>
-              <p className="text-xl font-extrabold text-white font-mono mt-1">{current.sprints} <span className="text-xs font-normal text-emerald-400">runs</span></p>
+            {/* Speed Profile Over Match Time */}
+            <div className="mt-5 pt-4 border-t border-[#1E2638]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-mono font-semibold text-slate-300">
+                  Instantaneous Speed Profile (10-minute intervals)
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">Sprint Cutoff: 25.2 km/h</span>
+              </div>
+              <div className="h-44">
+                <Line data={speedChartData} options={chartOptions} />
+              </div>
             </div>
-
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              <span className="text-[10px] font-mono uppercase text-slate-400">Instant Speed</span>
-              <p className="text-xl font-extrabold text-emerald-400 font-mono mt-1">{current.currentSpeedKmh} <span className="text-xs font-normal text-slate-400">km/h</span></p>
-            </div>
-
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              <span className="text-[10px] font-mono uppercase text-slate-400">Tracking Confidence</span>
-              <p className="text-xl font-extrabold text-sky-400 font-mono mt-1">{current.trackletConfidence}</p>
-            </div>
-
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
-              <span className="text-[10px] font-mono uppercase text-slate-400">Frame Continuity</span>
-              <p className="text-xl font-extrabold text-amber-400 font-mono mt-1">{current.activeFrames}</p>
-            </div>
-          </div>
-
-          <div className="mt-6 p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300">
-            <span className="font-semibold text-slate-200">Kinematic Computation Notice:</span>
-            <p className="text-[11px] text-slate-400 mt-1">
-              In Phase 2, speeds will be derived via Euclidean distances across homography-calibrated pitch meters divided by video frame delta time (dt = 1/FPS).
-            </p>
           </div>
         </div>
       </div>

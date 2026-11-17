@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+export const SERVER_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -53,6 +54,18 @@ export const api = {
   getVideoStatus: async (videoId) => {
     const response = await apiClient.get(`/video/status/${videoId}`);
     return response.data;
+  },
+
+  // Resolve video stream URL for playback
+  getVideoStreamUrl: (filenameOrStreamUrl) => {
+    if (!filenameOrStreamUrl) return null;
+    if (filenameOrStreamUrl.startsWith('http://') || filenameOrStreamUrl.startsWith('https://')) {
+      return filenameOrStreamUrl;
+    }
+    const cleanPath = filenameOrStreamUrl.startsWith('/')
+      ? filenameOrStreamUrl
+      : `/uploads/${filenameOrStreamUrl}`;
+    return `${SERVER_BASE_URL}${cleanPath}`;
   },
 };
 
