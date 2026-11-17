@@ -28,7 +28,7 @@ export function App() {
     }, 4000);
   };
 
-  // Check backend health and fetch dynamic demo overview
+  // Poll backend health status
   const checkBackendHealth = useCallback(async () => {
     setIsCheckingBackend(true);
     try {
@@ -66,10 +66,9 @@ export function App() {
     return () => clearInterval(interval);
   }, [checkBackendHealth]);
 
-  // Keyboard shortcut navigation (1-5 keys)
+  // Keyboard shortcut navigation (1-5 keys, safe for input fields)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore if typing in an input
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
 
       if (e.key === '1') setActiveTab('overview');
@@ -94,13 +93,13 @@ export function App() {
     setActiveVideo({
       filename: 'sample_tactical_broadcast_1080p.mp4',
       original_filename: 'Manchester_Blue_vs_London_Red_Tactical_Cam.mp4',
-      stream_url: null, // triggers high-fidelity simulated broadcast canvas with YOLO bounding boxes
+      stream_url: null, // triggers simulated tactical demo preview
     });
     showToast('Loaded demo tactical match footage with synchronized player tracking.', 'info');
   };
 
   return (
-    <div className="flex min-h-screen bg-[#05070B] text-slate-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300">
+    <div className="flex min-h-screen bg-[#080B10] text-[#F8FAFC] font-sans selection:bg-emerald-500/25 selection:text-emerald-300">
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
@@ -111,7 +110,7 @@ export function App() {
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
-      {/* Main App Canvas */}
+      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
         <Navbar
@@ -128,10 +127,10 @@ export function App() {
           activeVideoName={activeVideo?.original_filename || activeVideo?.filename}
         />
 
-        {/* Dynamic Toast Feedback Pill */}
+        {/* Global Toast Notification */}
         {toastMessage && (
-          <div className="fixed bottom-6 right-6 z-50 animate-bounce">
-            <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900 border border-emerald-500/40 text-white shadow-2xl shadow-black text-xs font-mono">
+          <div className="fixed bottom-6 right-6 z-50">
+            <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-[#101722] border border-emerald-500/40 text-white shadow-modal text-xs font-mono">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>{toastMessage.message}</span>
               <button
@@ -144,7 +143,7 @@ export function App() {
           </div>
         )}
 
-        {/* Content View Area */}
+        {/* Workspace Canvas */}
         <main className="p-4 sm:p-6 md:p-8 flex-1 overflow-y-auto">
           {activeTab === 'overview' && (
             <OverviewTab

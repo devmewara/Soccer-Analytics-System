@@ -4,64 +4,46 @@
 
 @layer base {
   body {
-    background-color: #05070B;
-    color: #F1F5F9;
+    background-color: #080B10;
+    color: #F8FAFC;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
   }
 }
 
-/* Custom sleek scrollbar */
+/* Custom sleek, restrained scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #070A0F;
+  background: #080B10;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1E2638;
-  border-radius: 4px;
+  background: #253244;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2D3A52;
+  background: #33445C;
 }
 
-/* Pitch Grass Alternating Mowed Stripes */
+/* Realistic Mowed Pitch Grass Alternating Stripes */
 .pitch-stripes-bg {
   background: repeating-linear-gradient(
     90deg,
-    #071A10 0px,
-    #071A10 36px,
-    #0A2115 36px,
-    #0A2115 72px
+    #0B1B13 0px,
+    #0B1B13 36px,
+    #0E2419 36px,
+    #0E2419 72px
   );
-}
-
-/* Subtle tactical grid background */
-.tactical-grid-bg {
-  background-image: 
-    linear-gradient(rgba(30, 38, 56, 0.4) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(30, 38, 56, 0.4) 1px, transparent 1px);
-  background-size: 32px 32px;
 }
 
 /* Glass panel effect */
 .glass-panel {
-  background: rgba(10, 14, 23, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* Micro pulse animation for live CV indicators */
-@keyframes pulseSlow {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(0.97); }
-}
-
-.animate-pulse-slow {
-  animation: pulseSlow 3s ease-in-out infinite;
+  background: rgba(16, 23, 34, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }

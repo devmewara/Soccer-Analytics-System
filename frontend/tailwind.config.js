@@ -9,21 +9,22 @@ export default {
     extend: {
       colors: {
         pitch: {
-          void: '#05070B',        // Deepest black canvas
-          card: '#0A0E17',        // Surface layer 1
-          elevated: '#111827',    // Surface layer 2
-          surface: '#141D2E',     // Surface layer 3
-          border: '#1E2638',      // Default subtle border
-          borderLight: '#2D3A52', // Interactive / hover border
-          turf: '#071A10',        // Deep turf base
-          turfStripe: '#0B2618',  // Pitch striped turf
-          accent: '#10B981',      // Emerald football green
+          bg: '#080B10',          // Main dark background
+          surface: '#101722',     // Primary surface
+          elevated: '#17212E',    // Elevated surface / cards
+          highlight: '#1E2B3C',   // Hover / active layer
+          border: '#253244',      // Standard crisp border
+          borderSubtle: '#1C2634',// Very subtle divider
+          turf: '#0B1B13',        // Muted realistic pitch grass base
+          turfStripe: '#0E2419',  // Alternating grass stripes
+          accent: '#10B981',      // Restrained football-pitch emerald
           accentHover: '#059669',
-          glow: '#00E676',        // Electric turf highlight
-          cyan: '#38BDF8',        // Team Sky Blue
-          crimson: '#EF4444',     // Team Crimson
-          ball: '#FACC15',        // Match Ball
-          referee: '#A855F7',     // Referee Purple
+          sky: '#38BDF8',         // Muted sky blue (Team A / Telemetry)
+          crimson: '#EF4444',     // Muted crimson red (Team B)
+          amber: '#F59E0B',       // Muted amber (Demo badges & warnings)
+          textPrimary: '#F8FAFC', // Off-white crisp text
+          textSecondary: '#94A3B8', // Clean muted grey
+          textMuted: '#64748B',   // Darker technical labels
         }
       },
       fontFamily: {
@@ -31,9 +32,8 @@ export default {
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
       boxShadow: {
-        'glow-green': '0 0 25px -5px rgba(16, 185, 129, 0.25)',
-        'glow-turf': '0 0 35px -5px rgba(0, 230, 118, 0.2)',
-        'tactical': '0 10px 30px -10px rgba(0, 0, 0, 0.7)',
+        'panel': '0 4px 20px -2px rgba(0, 0, 0, 0.5)',
+        'modal': '0 20px 40px -10px rgba(0, 0, 0, 0.8)',
       }
     },
   },

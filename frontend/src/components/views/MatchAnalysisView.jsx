@@ -2,19 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Play,
   Pause,
-  RotateCcw,
   SkipForward,
   SkipBack,
   Sliders,
   Eye,
   Layers,
-  Target,
   Clock,
-  Maximize2,
-  ChevronRight,
-  Shield,
-  Activity,
   Sparkles,
+  Info,
+  Film,
 } from 'lucide-react';
 import DemoBanner from '../common/DemoBanner';
 import DemoBadge from '../common/DemoBadge';
@@ -27,17 +23,17 @@ export const MatchAnalysisView = ({
   onSelectPlayer,
   onLoadDemoClip,
 }) => {
-  // View mode: 'split' | 'video' | 'pitch'
+  // Layout mode: 'split' | 'video' | 'pitch'
   const [viewMode, setViewMode] = useState('split');
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [currentTime, setCurrentTime] = useState(14.3); // seconds into match clip
+  const [currentTime, setCurrentTime] = useState(14.3);
   const [duration, setDuration] = useState(90);
   const [selectedZone, setSelectedZone] = useState('z_att_third');
   const [selectedEventId, setSelectedEventId] = useState('evt_1');
   const [selectedPlayerId, setSelectedPlayerId] = useState(17);
 
-  // Tactical overlay toggles for the video canvas
+  // Overlay visibility toggles for DEMO mode
   const [showBoundingBoxes, setShowBoundingBoxes] = useState(true);
   const [showPitchCalibration, setShowPitchCalibration] = useState(true);
   const [showBallTrail, setShowBallTrail] = useState(true);
@@ -50,12 +46,17 @@ export const MatchAnalysisView = ({
   const zones = data?.pitch_zones || [];
   const activeZoneObj = zones.find((z) => z.id === selectedZone) || zones[0];
   const activeEvent = events.find((e) => e.id === selectedEventId) || events[0];
-  const selectedPlayer = players.find((p) => p.id === selectedPlayerId) || players[0];
 
-  // Playback timer simulation if using canvas demo preview
+  // Determine whether current video is user-uploaded or demo preview
+  const isUserUploadedVideo = Boolean(activeVideo?.stream_url || activeVideo?.saved_filename);
+  const videoStreamUrl = activeVideo?.stream_url
+    ? api.getVideoStreamUrl(activeVideo.stream_url)
+    : null;
+
+  // Simulated playback timer for demo mode when no actual video file is streaming
   useEffect(() => {
     let interval = null;
-    if (isPlaying) {
+    if (isPlaying && !videoStreamUrl) {
       interval = setInterval(() => {
         setCurrentTime((prev) => {
           if (prev >= duration) {
@@ -67,7 +68,7 @@ export const MatchAnalysisView = ({
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, playbackSpeed, duration]);
+  }, [isPlaying, playbackSpeed, duration, videoStreamUrl]);
 
   const handlePlayPause = () => {
     if (videoRef.current) {
@@ -81,12 +82,10 @@ export const MatchAnalysisView = ({
   };
 
   const handleStepFrame = (deltaSeconds) => {
-    setCurrentTime((prev) => Math.max(0, Math.min(duration, prev + deltaSeconds)));
+    const nextTime = Math.max(0, Math.min(duration, currentTime + deltaSeconds));
+    setCurrentTime(nextTime);
     if (videoRef.current) {
-      videoRef.current.currentTime = Math.max(
-        0,
-        Math.min(duration, videoRef.current.currentTime + deltaSeconds)
-      );
+      videoRef.current.currentTime = nextTime;
     }
   };
 
@@ -105,43 +104,47 @@ export const MatchAnalysisView = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms}`;
   };
 
-  const videoStreamUrl = activeVideo?.stream_url
-    ? api.getVideoStreamUrl(activeVideo.stream_url)
-    : null;
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <DemoBanner />
 
       {/* Studio Header & Layout Modes */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-[#1E2638]">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-[#253244]">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-white tracking-tight">Tactical Match Analysis Studio</h2>
-            <DemoBadge />
+            <h2 className="text-xl font-bold text-white tracking-tight">Match Analysis Studio</h2>
+            {isUserUploadedVideo ? (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                RAW USER FOOTAGE
+              </span>
+            ) : (
+              <DemoBadge label="DEMO SHOWCASE" />
+            )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Synchronized video playback, YOLO bounding box overlays, and 2D calibrated tactical pitch.
+            {isUserUploadedVideo
+              ? `Playing uploaded match file: ${activeVideo.original_filename || activeVideo.filename}`
+              : 'Synchronized tactical video player, simulated detection overlays, and 2D calibrated pitch.'}
           </p>
         </div>
 
-        {/* View Layout Selector */}
-        <div className="flex items-center gap-1.5 p-1 bg-[#0A0E17] border border-[#1E2638] rounded-xl self-end sm:self-center">
+        {/* View Layout Switcher */}
+        <div className="flex items-center gap-1.5 p-1 bg-[#101722] border border-[#253244] rounded-xl self-end sm:self-center">
           <button
             onClick={() => setViewMode('split')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors ${
               viewMode === 'split'
-                ? 'bg-emerald-500 text-black font-bold shadow-md shadow-emerald-500/20'
+                ? 'bg-[#17212E] text-white border border-[#253244]'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            Split View (50/50)
+            Split View
           </button>
           <button
             onClick={() => setViewMode('video')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors ${
               viewMode === 'video'
-                ? 'bg-emerald-500 text-black font-bold shadow-md shadow-emerald-500/20'
+                ? 'bg-[#17212E] text-white border border-[#253244]'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -149,9 +152,9 @@ export const MatchAnalysisView = ({
           </button>
           <button
             onClick={() => setViewMode('pitch')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors ${
               viewMode === 'pitch'
-                ? 'bg-emerald-500 text-black font-bold shadow-md shadow-emerald-500/20'
+                ? 'bg-[#17212E] text-white border border-[#253244]'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -168,49 +171,59 @@ export const MatchAnalysisView = ({
             : 'grid-cols-1'
         }`}
       >
-        {/* Panel 1: Video Player with Tactical CV Overlays */}
+        {/* Panel 1: Video Player */}
         {(viewMode === 'split' || viewMode === 'video') && (
-          <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-4 sm:p-5 shadow-2xl shadow-black/60 flex flex-col justify-between">
+          <div className="bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between">
             <div>
-              {/* Video Player Header with Overlay Toggles */}
-              <div className="flex items-center justify-between pb-3 border-b border-[#1E2638] mb-3">
+              {/* Video Player Header with Status */}
+              <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                  <Film className="w-4 h-4 text-emerald-400" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                    Match Broadcast Cam (1080p)
+                    {isUserUploadedVideo ? 'User Match Recording' : 'Tactical Cam Preview (Demo)'}
                   </span>
                 </div>
 
+                {/* Overlays Toggle: only shown if Demo Showcase, otherwise notice */}
                 <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setShowBoundingBoxes(!showBoundingBoxes)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                      showBoundingBoxes
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : 'bg-slate-900 text-slate-500 border border-slate-800'
-                    }`}
-                    title="Toggle YOLOv8 player bounding boxes"
-                  >
-                    Boxes: {showBoundingBoxes ? 'ON' : 'OFF'}
-                  </button>
+                  {!isUserUploadedVideo ? (
+                    <>
+                      <button
+                        onClick={() => setShowBoundingBoxes(!showBoundingBoxes)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                          showBoundingBoxes
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-[#17212E] text-slate-500 border border-[#253244]'
+                        }`}
+                        title="Toggle simulated YOLO bounding boxes"
+                      >
+                        Boxes: {showBoundingBoxes ? 'ON' : 'OFF'}
+                      </button>
 
-                  <button
-                    onClick={() => setShowPitchCalibration(!showPitchCalibration)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                      showPitchCalibration
-                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                        : 'bg-slate-900 text-slate-500 border border-slate-800'
-                    }`}
-                    title="Toggle OpenCV pitch calibration grid"
-                  >
-                    Grid: {showPitchCalibration ? 'ON' : 'OFF'}
-                  </button>
+                      <button
+                        onClick={() => setShowPitchCalibration(!showPitchCalibration)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                          showPitchCalibration
+                            ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30'
+                            : 'bg-[#17212E] text-slate-500 border border-[#253244]'
+                        }`}
+                        title="Toggle simulated pitch perspective lines"
+                      >
+                        Grid: {showPitchCalibration ? 'ON' : 'OFF'}
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[10px] font-mono text-slate-400 bg-[#080B10] px-2 py-0.5 rounded border border-[#253244]">
+                      CV Overlays: Queued for Phase 2
+                    </span>
+                  )}
                 </div>
               </div>
 
               {/* Video Player Display Container */}
-              <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-[#1E2638] shadow-inner flex items-center justify-center group select-none">
+              <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-[#253244] flex items-center justify-center select-none">
                 {videoStreamUrl ? (
+                  /* Real HTML5 Video Player playing user uploaded video */
                   <video
                     ref={videoRef}
                     src={videoStreamUrl}
@@ -221,86 +234,73 @@ export const MatchAnalysisView = ({
                     onLoadedMetadata={() => {
                       if (videoRef.current) setDuration(videoRef.current.duration || 90);
                     }}
+                    onEnded={() => setIsPlaying(false)}
                   />
                 ) : (
-                  /* Simulated Tactical Broadcast Screen with Football Pitch Graphic */
-                  <div className="relative w-full h-full bg-gradient-to-b from-[#0c2415] via-[#07190e] to-[#040e08] flex items-center justify-center overflow-hidden">
+                  /* Simulated Tactical Broadcast Screen with football pitch canvas (Demo) */
+                  <div className="relative w-full h-full bg-[#07150E] flex items-center justify-center overflow-hidden">
                     {/* Simulated Camera Perspective lines */}
                     {showPitchCalibration && (
-                      <div className="absolute inset-0 pointer-events-none opacity-40">
+                      <div className="absolute inset-0 pointer-events-none opacity-30">
                         <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                          <line x1="10" y1="90" x2="35" y2="20" stroke="#10B981" strokeWidth="0.3" strokeDasharray="1,1" />
-                          <line x1="90" y1="90" x2="65" y2="20" stroke="#10B981" strokeWidth="0.3" strokeDasharray="1,1" />
-                          <line x1="20" y1="50" x2="80" y2="50" stroke="#10B981" strokeWidth="0.3" strokeDasharray="1,1" />
+                          <line x1="8" y1="92" x2="36" y2="18" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
+                          <line x1="92" y1="92" x2="64" y2="18" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
+                          <line x1="18" y1="50" x2="82" y2="50" stroke="#10B981" strokeWidth="0.4" strokeDasharray="1,1" />
                         </svg>
                       </div>
                     )}
 
-                    {/* Simulated YOLO Detection Bounding Boxes */}
+                    {/* Simulated YOLO Detection Bounding Boxes (ONLY IN DEMO MODE) */}
                     {showBoundingBoxes && (
                       <>
-                        {/* Player 1: KDB (Man Blue) */}
                         <div className="absolute left-[54%] top-[38%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                          <span className="text-[8px] font-mono font-bold bg-sky-500 text-black px-1 rounded-t">
-                            #17 KDB 0.94
+                          <span className="text-[8px] font-mono bg-sky-500 text-black px-1 font-semibold rounded-t">
+                            #17 KDB (Demo)
                           </span>
                           <div className="w-10 h-20 border-2 border-sky-400 bg-sky-500/10 rounded-sm"></div>
                         </div>
 
-                        {/* Player 2: Haaland (Man Blue) */}
                         <div className="absolute left-[72%] top-[45%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                          <span className="text-[8px] font-mono font-bold bg-sky-500 text-black px-1 rounded-t">
-                            #9 Haaland 0.98
+                          <span className="text-[8px] font-mono bg-sky-500 text-black px-1 font-semibold rounded-t">
+                            #9 Haaland (Demo)
                           </span>
                           <div className="w-12 h-24 border-2 border-sky-400 bg-sky-500/10 rounded-sm"></div>
                         </div>
 
-                        {/* Player 3: Saka (London Red) */}
                         <div className="absolute left-[42%] top-[30%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                          <span className="text-[8px] font-mono font-bold bg-rose-500 text-white px-1 rounded-t">
-                            #7 Saka 0.91
+                          <span className="text-[8px] font-mono bg-rose-500 text-white px-1 font-semibold rounded-t">
+                            #7 Saka (Demo)
                           </span>
                           <div className="w-10 h-20 border-2 border-rose-500 bg-rose-500/10 rounded-sm"></div>
                         </div>
 
-                        {/* Player 4: Rice (London Red) */}
-                        <div className="absolute left-[34%] top-[52%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                          <span className="text-[8px] font-mono font-bold bg-rose-500 text-white px-1 rounded-t">
-                            #41 Rice 0.95
-                          </span>
-                          <div className="w-11 h-22 border-2 border-rose-500 bg-rose-500/10 rounded-sm"></div>
-                        </div>
-
-                        {/* Ball Reticle */}
                         {showBallTrail && (
                           <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
-                            <span className="text-[7px] font-mono font-bold bg-amber-400 text-black px-1 rounded-t">
-                              Ball 0.88
+                            <span className="text-[7px] font-mono bg-amber-400 text-black px-1 font-semibold rounded-t">
+                              Ball (Demo)
                             </span>
-                            <div className="w-5 h-5 rounded-full border-2 border-amber-300 animate-ping"></div>
+                            <div className="w-4 h-4 rounded-full border-2 border-amber-300"></div>
                           </div>
                         )}
                       </>
                     )}
 
-                    {/* Overlay Watermark info */}
-                    <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded text-[10px] font-mono text-slate-300 border border-slate-800">
-                      <span>Simulated Broadcast Stream</span>
-                      <span className="mx-1.5 text-slate-600">•</span>
-                      <span className="text-emerald-400">YOLO Detection Overlay</span>
+                    {/* Demo Showcase Watermark */}
+                    <div className="absolute top-3 left-3 bg-[#080B10]/90 px-2.5 py-1 rounded text-[10px] font-mono text-slate-300 border border-[#253244]">
+                      <span>Tactical Demonstration Preview</span>
                     </div>
 
-                    <div className="absolute bottom-3 right-3 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded text-[10px] font-mono text-slate-300 border border-slate-800">
-                      <span>ByteTrack: Active (4 Tracklets)</span>
+                    <div className="absolute bottom-3 right-3 bg-[#080B10]/90 px-2.5 py-1 rounded text-[10px] font-mono text-amber-400 border border-amber-500/30">
+                      <span>Simulated Detections</span>
                     </div>
                   </div>
                 )}
               </div>
 
               {/* Match Timeline Scrub Bar */}
-              <div className="mt-3 space-y-1.5">
+              <div className="mt-3.5 space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-mono text-slate-400">
-                  <span className="text-emerald-400 font-bold">{formatTimecode(currentTime)}</span>
+                  <span className="text-emerald-400 font-medium">{formatTimecode(currentTime)}</span>
                   <span>{formatTimecode(duration)}</span>
                 </div>
                 <input
@@ -310,16 +310,16 @@ export const MatchAnalysisView = ({
                   step="0.1"
                   value={currentTime}
                   onChange={handleSeek}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  className="w-full h-1.5 bg-[#080B10] rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
               </div>
 
-              {/* Playback Controls & Frame Stepper */}
-              <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-[#1E2638]">
+              {/* Playback Controls & Frame Steppers */}
+              <div className="mt-3 flex items-center justify-between gap-2 pt-2.5 border-t border-[#253244]">
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleStepFrame(-1.0)}
-                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors"
+                    className="p-1.5 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors"
                     title="Step 1s Backward"
                   >
                     <SkipBack className="w-4 h-4" />
@@ -327,7 +327,7 @@ export const MatchAnalysisView = ({
 
                   <button
                     onClick={handlePlayPause}
-                    className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold shadow-md shadow-emerald-500/20 transition-all active:scale-95"
+                    className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold shadow-sm transition-all active:scale-95"
                     title={isPlaying ? 'Pause' : 'Play'}
                   >
                     {isPlaying ? <Pause className="w-4 h-4 fill-black" /> : <Play className="w-4 h-4 fill-black" />}
@@ -335,15 +335,15 @@ export const MatchAnalysisView = ({
 
                   <button
                     onClick={() => handleStepFrame(1.0)}
-                    className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors"
+                    className="p-1.5 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors"
                     title="Step 1s Forward"
                   >
                     <SkipForward className="w-4 h-4" />
                   </button>
                 </div>
 
-                {/* Playback Rate Selector */}
-                <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 text-xs font-mono">
+                {/* Playback Speed Multiplier */}
+                <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-xs font-mono">
                   {[0.5, 1.0, 2.0].map((rate) => (
                     <button
                       key={rate}
@@ -363,41 +363,39 @@ export const MatchAnalysisView = ({
           </div>
         )}
 
-        {/* Panel 2: Interactive 2D Calibrated Pitch Canvas */}
+        {/* Panel 2: Interactive 2D Homography Pitch */}
         {(viewMode === 'split' || viewMode === 'pitch') && (
-          <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-4 sm:p-5 shadow-2xl shadow-black/60 flex flex-col justify-between">
+          <div className="bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between">
             <div>
               {/* Pitch Canvas Header */}
-              <div className="flex items-center justify-between pb-3 border-b border-[#1E2638] mb-3">
+              <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                   <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                    2D Homography Pitch Canvas
+                    2D Pitch Map (FIFA 105m × 68m)
                   </span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setShowZoneOverlay(!showZoneOverlay)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
-                      showZoneOverlay
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : 'bg-slate-900 text-slate-500 border border-slate-800'
-                    }`}
-                  >
-                    Tactical Zones: {showZoneOverlay ? 'ON' : 'OFF'}
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowZoneOverlay(!showZoneOverlay)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    showZoneOverlay
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-[#17212E] text-slate-400 border border-[#253244]'
+                  }`}
+                >
+                  Tactical Thirds: {showZoneOverlay ? 'ON' : 'OFF'}
+                </button>
               </div>
 
-              {/* 2D Pitch Canvas Component */}
+              {/* 2D Pitch Canvas */}
               <PitchCanvas
                 showZones={showZoneOverlay}
                 activeZone={selectedZone}
                 onZoneClick={(zoneId) => setSelectedZone(zoneId)}
                 heightClass={viewMode === 'pitch' ? 'h-[460px]' : 'h-72 sm:h-80 md:h-[340px]'}
               >
-                {/* Render All 22 Player Nodes on Calibrated Pitch */}
+                {/* 22 Player Nodes on Calibrated Pitch (Modeled Sample Data) */}
                 {players.map((p) => {
                   const isSelected = p.id === selectedPlayerId;
                   const isTeamA = p.team_id === 'man_blue';
@@ -414,7 +412,7 @@ export const MatchAnalysisView = ({
                       style={{ left: `${p.pitch_x}%`, top: `${p.pitch_y}%` }}
                     >
                       <div
-                        className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-mono font-bold text-[9px] sm:text-[10px] text-black shadow-lg transition-all ${
+                        className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-mono font-bold text-[9px] sm:text-[10px] text-black shadow transition-all ${
                           isTeamA
                             ? 'bg-sky-400 border border-white'
                             : 'bg-rose-500 text-white border border-white'
@@ -423,32 +421,27 @@ export const MatchAnalysisView = ({
                         {p.jersey_number}
                       </div>
 
-                      {/* Tooltip on hover */}
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-slate-950/90 text-white text-[9px] font-mono px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap z-30">
-                        {p.short_name} ({p.top_speed_kmh} km/h)
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-[#080B10] text-white text-[9px] font-mono px-2 py-0.5 rounded border border-[#253244] whitespace-nowrap z-30">
+                        {p.short_name} (Sample)
                       </div>
                     </div>
                   );
                 })}
 
-                {/* Match Ball Marker on Pitch */}
-                <div
-                  className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30"
-                >
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm shadow-amber-400 animate-pulse"></div>
+                {/* Match Ball Marker */}
+                <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30">
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm shadow-amber-400"></div>
                 </div>
               </PitchCanvas>
 
-              {/* Selected Tactical Zone Inspection Detail */}
-              <div className="mt-4 p-3.5 rounded-xl bg-[#080C14] border border-[#1E2638] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              {/* Selected Zone Analysis Summary */}
+              <div className="mt-4 p-3.5 rounded-xl bg-[#080B10] border border-[#253244] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-white font-mono uppercase tracking-wide">
                       {activeZoneObj.label}
                     </span>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
-                      {activeZoneObj.category}
-                    </span>
+                    <DemoBadge size="xs" label="SAMPLE DATA" />
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                     {activeZoneObj.desc}
@@ -457,11 +450,11 @@ export const MatchAnalysisView = ({
 
                 <div className="flex items-center gap-4 text-xs font-mono shrink-0">
                   <div>
-                    <span className="text-slate-400 block text-[9px]">COMPLETED PASSES</span>
+                    <span className="text-slate-500 block text-[9px]">PASS VOLUME</span>
                     <span className="text-emerald-400 font-bold">{activeZoneObj.passes_completed}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[9px]">POSSESSION TIME</span>
+                    <span className="text-slate-500 block text-[9px]">TIME IN ZONE</span>
                     <span className="text-sky-400 font-bold">{activeZoneObj.possession_share_pct}%</span>
                   </div>
                 </div>
@@ -471,20 +464,21 @@ export const MatchAnalysisView = ({
         )}
       </div>
 
-      {/* Match Events Timeline Panel (Clicking event seeks time) */}
-      <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-5 shadow-xl shadow-black/40">
-        <div className="flex items-center justify-between pb-3 border-b border-[#1E2638] mb-4">
+      {/* Match Events Timeline Panel (Modeled Sample Events) */}
+      <div className="bg-[#101722] border border-[#253244] rounded-2xl p-5 shadow-panel">
+        <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3.5">
           <div>
             <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-400" />
-              <span>Match Events Log & Tactical Milestones</span>
+              <span>Match Events Log (Demonstration Timeline)</span>
+              <DemoBadge size="xs" label="SAMPLE EVENTS" />
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Click any event milestone to inspect that tactical moment on the video timeline.
+              Simulated match moments illustrating tactical event timeline scrubbing.
             </p>
           </div>
           <span className="text-[10px] font-mono text-slate-400">
-            {events.length} Key Moments
+            {events.length} Milestones
           </span>
         </div>
 
@@ -499,14 +493,14 @@ export const MatchAnalysisView = ({
                   setCurrentTime(evt.minute);
                   if (videoRef.current) videoRef.current.currentTime = evt.minute;
                 }}
-                className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-emerald-500/15 border-emerald-500/40 shadow-sm shadow-emerald-500/20'
-                    : 'bg-[#080C14] border-[#1E2638] hover:border-slate-700'
+                    ? 'bg-[#17212E] border-emerald-500/50'
+                    : 'bg-[#080B10] border-[#253244] hover:border-slate-600'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded">
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
                     {evt.minute}' MIN
                   </span>
                   <span className="text-[9px] font-mono uppercase text-slate-400">

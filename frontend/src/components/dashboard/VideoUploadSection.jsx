@@ -8,7 +8,6 @@ import {
   HardDrive,
   Cpu,
   Play,
-  ArrowRight,
   Clock,
   Sparkles,
 } from 'lucide-react';
@@ -77,7 +76,7 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
 
     if (!hasValidExt) {
       setErrorMessage(
-        `Unsupported format. Please select a valid match recording (${validExtensions.join(', ')}).`
+        `Unsupported video format. Please select an MP4, AVI, MOV, or MKV recording.`
       );
       return;
     }
@@ -105,7 +104,7 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
       const detail =
         err.response?.data?.detail ||
         err.message ||
-        'Upload failed. Please verify that the FastAPI backend is running on http://localhost:8000';
+        'Upload failed. Ensure FastAPI backend is running on http://localhost:8000';
       setErrorMessage(detail);
     } finally {
       setUploading(false);
@@ -113,33 +112,31 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
   };
 
   return (
-    <div className="bg-[#0A0E17] border border-[#1E2638] rounded-2xl p-5 sm:p-6 shadow-2xl shadow-black/60">
-      {/* Header with Technical Badges */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-[#1E2638]">
+    <div className="bg-[#101722] border border-[#253244] rounded-2xl p-5 sm:p-6 shadow-panel">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-[#253244]">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-white tracking-tight">Match Video Ingestion Gateway</h3>
-            <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded">
-              Active Pipeline
+            <span className="text-[10px] font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded">
+              Storage: Operational
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Upload match broadcast or tactical camera recordings (.mp4, .avi, .mov, max 500MB) for CV analysis pipeline.
+            Upload match broadcast or tactical camera footage (.mp4, .avi, .mov, max 500MB) directly to backend storage.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onLoadDemoClip}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-xs font-mono text-amber-300 border border-amber-500/30 transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Load Sample Clip</span>
-          </button>
-        </div>
+        <button
+          onClick={onLoadDemoClip}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#17212E] hover:bg-[#1E2B3C] text-xs font-mono text-amber-300 border border-[#253244] transition-colors"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <span>Load Sample Clip</span>
+        </button>
       </div>
 
-      {/* Main Drag & Drop Zone */}
+      {/* Drag & Drop Upload Zone */}
       <div className="mt-5">
         <form
           onDragEnter={handleDrag}
@@ -160,48 +157,48 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
             onDragOver={handleDrag}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 sm:p-10 text-center cursor-pointer transition-all ${
+            className={`border-2 border-dashed rounded-xl p-8 sm:p-10 text-center cursor-pointer transition-colors ${
               dragActive
                 ? 'border-emerald-400 bg-emerald-950/20'
                 : selectedFile
-                ? 'border-emerald-500/60 bg-[#0E1524]'
-                : 'border-[#1E2638] hover:border-slate-700 bg-[#080C14]/60'
+                ? 'border-emerald-500/60 bg-[#17212E]'
+                : 'border-[#253244] hover:border-slate-600 bg-[#080B10]'
             }`}
           >
             <div className="flex flex-col items-center justify-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/10">
-                <UploadCloud className="w-7 h-7" />
+              <div className="w-12 h-12 rounded-xl bg-[#17212E] border border-[#253244] flex items-center justify-center text-emerald-400">
+                <UploadCloud className="w-6 h-6" />
               </div>
 
               <div>
                 <p className="text-sm font-semibold text-white">
-                  {selectedFile ? selectedFile.name : 'Click to select or drag & drop football match video'}
+                  {selectedFile ? selectedFile.name : 'Select or drag & drop football match video'}
                 </p>
                 <p className="text-xs text-slate-400 mt-1 font-mono">
                   {selectedFile
-                    ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready for transfer to FastAPI`
+                    ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to transfer to FastAPI backend`
                     : 'Supported: MP4, AVI, MOV, MKV • H.264/HEVC • Up to 500MB'}
                 </p>
               </div>
 
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded">
-                  Destination: backend/uploads/
+                <span className="text-[10px] font-mono bg-[#17212E] border border-[#253244] text-slate-300 px-2 py-0.5 rounded">
+                  Server Destination: backend/uploads/
                 </span>
               </div>
             </div>
           </div>
         </form>
 
-        {/* Selected File Stage & Upload Action */}
+        {/* Selected File Review Stage */}
         {selectedFile && !uploading && (
-          <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-[#0E1524] border border-emerald-500/30 rounded-xl">
+          <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-[#17212E] border border-emerald-500/30 rounded-xl">
             <div className="flex items-center gap-3">
-              <FileVideo className="w-6 h-6 text-emerald-400 shrink-0" />
+              <FileVideo className="w-5 h-5 text-emerald-400 shrink-0" />
               <div className="text-xs">
                 <p className="font-semibold text-white">{selectedFile.name}</p>
                 <p className="text-slate-400 font-mono">
-                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Tactical Stream Ready
+                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Ready for ingestion
                 </p>
               </div>
             </div>
@@ -217,7 +214,7 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
               <button
                 type="button"
                 onClick={handleUpload}
-                className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs shadow-md shadow-emerald-500/25 transition-all"
+                className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-all shadow-sm"
               >
                 Upload to Server
               </button>
@@ -227,15 +224,15 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
 
         {/* Upload Progress Bar */}
         {uploading && (
-          <div className="mt-4 p-4 bg-[#0E1524] border border-[#1E2638] rounded-xl space-y-2">
+          <div className="mt-4 p-4 bg-[#17212E] border border-[#253244] rounded-xl space-y-2">
             <div className="flex items-center justify-between text-xs font-mono">
               <span className="text-slate-200 flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                Streaming footage to backend storage...
+                Transferring video chunks to backend storage...
               </span>
               <span className="text-emerald-400 font-bold">{uploadProgress}%</span>
             </div>
-            <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
+            <div className="w-full bg-[#080B10] h-2 rounded-full overflow-hidden">
               <div
                 className="bg-emerald-500 h-full transition-all duration-150 rounded-full"
                 style={{ width: `${uploadProgress}%` }}
@@ -249,7 +246,7 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
           <div className="mt-4 p-3.5 bg-rose-950/40 border border-rose-500/30 rounded-xl flex items-start gap-3 text-xs text-rose-300">
             <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-rose-200">Ingestion Error</p>
+              <p className="font-semibold text-rose-200">Upload Failed</p>
               <p className="mt-0.5">{errorMessage}</p>
             </div>
           </div>
@@ -257,13 +254,13 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
 
         {/* Upload Success State */}
         {uploadResult && (
-          <div className="mt-4 p-4 bg-emerald-950/30 border border-emerald-500/40 rounded-xl space-y-3">
+          <div className="mt-4 p-4 bg-emerald-950/20 border border-emerald-500/30 rounded-xl space-y-3">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="text-xs font-bold text-emerald-300 uppercase tracking-wider font-mono">
-                    Footage Ingested Successfully
+                    Footage Stored on Server
                   </h4>
                   <p className="text-xs text-slate-300 mt-0.5">
                     Saved as <span className="font-mono text-emerald-400">{uploadResult.saved_filename}</span> ({uploadResult.file_size_formatted})
@@ -274,7 +271,7 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
               {onSelectVideoForAnalysis && (
                 <button
                   onClick={() => onSelectVideoForAnalysis(uploadResult)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs transition-colors shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-colors shrink-0"
                 >
                   <Play className="w-3.5 h-3.5" />
                   <span>Open in Match Studio</span>
@@ -282,40 +279,40 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
               )}
             </div>
 
-            <div className="p-3 bg-[#05070B] border border-[#1E2638] rounded-lg flex items-center justify-between text-xs">
+            <div className="p-3 bg-[#080B10] border border-[#253244] rounded-lg flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-amber-400" />
                 <span className="text-slate-300 font-mono text-[11px]">
-                  Processing Pipeline: <strong className="text-amber-400">Queued for Phase 2 CV Inference</strong>
+                  Computer Vision Pipeline: <strong className="text-amber-400">Scheduled for Phase 2 Integration</strong>
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
-                Awaiting YOLO & ByteTrack activation
+              <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">
+                YOLOv8 + ByteTrack inference queue
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Uploaded Videos Library */}
-      <div className="mt-6 pt-5 border-t border-[#1E2638]">
+      {/* Uploaded Match Videos on Server */}
+      <div className="mt-6 pt-5 border-t border-[#253244]">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <HardDrive className="w-4 h-4 text-emerald-400" />
             <span className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-400">
-              Server Footage Storage
+              Server Video Library
             </span>
           </div>
-          <span className="text-[11px] font-mono text-slate-400">
-            {recentVideos.length} {recentVideos.length === 1 ? 'recording' : 'recordings'} found
+          <span className="text-[11px] font-mono text-slate-500">
+            {recentVideos.length} {recentVideos.length === 1 ? 'recording' : 'recordings'} on disk
           </span>
         </div>
 
         {recentVideos.length === 0 ? (
-          <div className="p-4 rounded-xl bg-[#080C14] border border-dashed border-[#1E2638] text-center">
-            <p className="text-xs text-slate-300">No match videos currently stored on server.</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Drag and drop a match clip above, or click "Load Sample Clip" to test tactical playback.
+          <div className="p-4 rounded-xl bg-[#080B10] border border-dashed border-[#253244] text-center">
+            <p className="text-xs text-slate-300">No match recordings currently saved in backend/uploads/.</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Upload footage above, or click "Load Sample Clip" to test the playback engine.
             </p>
           </div>
         ) : (
@@ -323,7 +320,7 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
             {recentVideos.map((video, idx) => (
               <div
                 key={idx}
-                className="flex items-center justify-between p-3 rounded-xl bg-[#0E1524] border border-[#1E2638] hover:border-slate-700 transition-colors text-xs"
+                className="flex items-center justify-between p-3 rounded-xl bg-[#17212E] border border-[#253244] hover:border-slate-600 transition-colors text-xs"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <FileVideo className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -339,10 +336,10 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
                   {onSelectVideoForAnalysis && (
                     <button
                       onClick={() => onSelectVideoForAnalysis(video)}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-mono flex items-center gap-1 transition-colors"
-                      title="Load this recording into the Match Analysis Studio"
+                      className="px-2.5 py-1 rounded-lg bg-[#101722] hover:bg-slate-800 text-slate-200 border border-[#253244] text-[11px] font-mono flex items-center gap-1 transition-colors"
+                      title="Load into Match Analysis Studio"
                     >
-                      <Play className="w-3 h-3" />
+                      <Play className="w-3 h-3 text-emerald-400" />
                       <span>Analyze</span>
                     </button>
                   )}
