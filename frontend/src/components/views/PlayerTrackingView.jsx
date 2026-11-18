@@ -28,8 +28,10 @@ export const PlayerTrackingView = ({
 
   // If real analytics is available, use real tracked players; otherwise use mock demo players
   const realPlayers = realAnalytics?.players || [];
+  const transientTracks = realAnalytics?.transient_tracks || [];
   const demoPlayers = data?.players || [];
 
+  const [showTransient, setShowTransient] = useState(false);
   const [selectedRealTrackId, setSelectedRealTrackId] = useState(
     initialSelectedPlayerId || (realPlayers.length > 0 ? realPlayers[0].track_id : null)
   );
@@ -38,16 +40,27 @@ export const PlayerTrackingView = ({
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [teamFilter, setTeamFilter] = useState('all');
 
-  // Filter real players
-  const filteredRealPlayers = realPlayers.filter((p) => {
-    return (
+  // Active roster based on toggle (confirmed players vs transient noise)
+  const activeRoster = showTransient ? transientTracks : realPlayers;
+
+  // Filter real players by search and team
+  const filteredRealPlayers = activeRoster.filter((p) => {
+    const matchesSearch =
       p.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.track_id.toString().includes(searchQuery)
-    );
+      p.track_id.toString().includes(searchQuery);
+    const matchesTeam =
+      teamFilter === 'all' ||
+      (teamFilter === 'team_a' && p.team === 'Team A') ||
+      (teamFilter === 'team_b' && p.team === 'Team B') ||
+      (teamFilter === 'referee' && p.team === 'Referee') ||
+      (teamFilter === 'unknown' && p.team === 'Unknown');
+    return matchesSearch && matchesTeam;
   });
 
   const currentRealPlayer =
-    realPlayers.find((p) => p.track_id === selectedRealTrackId) || realPlayers[0];
+    activeRoster.find((p) => p.track_id === selectedRealTrackId) ||
+    filteredRealPlayers[0] ||
+    activeRoster[0];
 
   // Demo player handling
   const filteredDemoPlayers = demoPlayers.filter((p) => {
@@ -130,9 +143,22 @@ export const PlayerTrackingView = ({
             </p>
           </div>
 
-          <span className="text-xs font-mono text-slate-400 bg-[#101722] px-3 py-1.5 rounded-xl border border-[#253244]">
-            Total Tracked: <strong className="text-emerald-400">{realPlayers.length} Players</strong>
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/25">
+              Team A: {realAnalytics?.summary_metrics?.team_a_count || 0}
+            </span>
+            <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/25">
+              Team B: {realAnalytics?.summary_metrics?.team_b_count || 0}
+            </span>
+            {(realAnalytics?.summary_metrics?.officials_count || 0) > 0 && (
+              <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/25">
+                Referees: {realAnalytics?.summary_metrics?.officials_count}
+              </span>
+            )}
+            <span className="text-xs font-mono text-emerald-400 bg-[#101722] px-3 py-1 rounded-xl border border-[#253244]">
+              Confirmed: <strong>{realPlayers.length}</strong>
+            </span>
+          </div>
         </div>
 
         {/* Workspace Layout */}
@@ -140,24 +166,99 @@ export const PlayerTrackingView = ({
           {/* Left Column: Player Selection & Filter List (4 cols) */}
           <div className="lg:col-span-4 bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between">
             <div>
-              <div className="flex items-center justify-between pb-3 border-b border-[#253244]">
-                <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                  Tracked Player Roster
-                </span>
-                <span className="text-[10px] font-mono text-emerald-400">
-                  {filteredRealPlayers.length} Detected
-                </span>
+              {/* Roster Type Selector (Confirmed vs Transient) */}
+              <div className="flex items-center gap-1.5 p-1 bg-[#080B10] rounded-xl border border-[#253244] text-[11px] font-mono mb-3">
+                <button
+                  onClick={() => setShowTransient(false)}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-center transition-colors font-medium ${
+                    !showTransient
+                      ? 'bg-emerald-500 text-black font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Confirmed ({realPlayers.length})
+                </button>
+                <button
+                  onClick={() => setShowTransient(true)}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-center transition-colors font-medium ${
+                    showTransient
+                      ? 'bg-amber-500 text-black font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Transient ({transientTracks.length})
+                </button>
               </div>
 
+              {/* Team Filter Pills (when looking at confirmed roster) */}
+              {!showTransient && (
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 mb-3 scrollbar-none text-[10px] font-mono">
+                  <button
+                    onClick={() => setTeamFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg border transition-colors ${
+                      teamFilter === 'all'
+                        ? 'bg-[#17212E] text-white border-emerald-500/50 font-bold'
+                        : 'bg-[#080B10] text-slate-400 border-[#253244] hover:text-white'
+                    }`}
+                  >
+                    All ({realPlayers.length})
+                  </button>
+                  <button
+                    onClick={() => setTeamFilter('team_a')}
+                    className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1.5 ${
+                      teamFilter === 'team_a'
+                        ? 'bg-sky-500/20 text-sky-400 border-sky-500/50 font-bold'
+                        : 'bg-[#080B10] text-slate-400 border-[#253244] hover:text-sky-300'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#38BDF8]"></span>
+                    Team A
+                  </button>
+                  <button
+                    onClick={() => setTeamFilter('team_b')}
+                    className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1.5 ${
+                      teamFilter === 'team_b'
+                        ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 font-bold'
+                        : 'bg-[#080B10] text-slate-400 border-[#253244] hover:text-rose-300'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#F43F5E]"></span>
+                    Team B
+                  </button>
+                  <button
+                    onClick={() => setTeamFilter('referee')}
+                    className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1.5 ${
+                      teamFilter === 'referee'
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 font-bold'
+                        : 'bg-[#080B10] text-slate-400 border-[#253244] hover:text-amber-300'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#FACC15]"></span>
+                    Refs
+                  </button>
+                  <button
+                    onClick={() => setTeamFilter('unknown')}
+                    className={`px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1.5 ${
+                      teamFilter === 'unknown'
+                        ? 'bg-slate-500/20 text-slate-300 border-slate-500/50 font-bold'
+                        : 'bg-[#080B10] text-slate-400 border-[#253244] hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-[#94A3B8]"></span>
+                    Unk
+                  </button>
+                </div>
+              )}
+
               {/* Search Input */}
-              <div className="mt-3 relative">
+              <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Search by track ID (e.g. 1, 2)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-[#080B10] border border-[#253244] text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50"
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-[#080B10] border border-[#253244] text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 font-mono"
                 />
               </div>
 
@@ -165,11 +266,12 @@ export const PlayerTrackingView = ({
               <div className="mt-3 space-y-2 max-h-[460px] overflow-y-auto pr-1">
                 {filteredRealPlayers.length === 0 ? (
                   <div className="p-6 text-center text-xs text-slate-400 bg-[#080B10] rounded-xl border border-[#253244]">
-                    No tracked player found matching "{searchQuery}"
+                    No tracked player found matching query.
                   </div>
                 ) : (
                   filteredRealPlayers.map((p) => {
                     const isSelected = p.track_id === currentRealPlayer?.track_id;
+                    const pTeamColor = p.team_color || '#10B981';
 
                     return (
                       <button
@@ -177,16 +279,36 @@ export const PlayerTrackingView = ({
                         onClick={() => setSelectedRealTrackId(p.track_id)}
                         className={`w-full p-2.5 rounded-xl border text-left flex items-center justify-between transition-colors ${
                           isSelected
-                            ? 'bg-[#17212E] border-emerald-500/50'
+                            ? 'bg-[#17212E] border-emerald-500/60 shadow-sm'
                             : 'bg-[#17212E]/40 border-[#253244] hover:border-slate-600'
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
-                          <span className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-mono font-bold text-xs">
+                          <span
+                            className="w-8 h-8 rounded-lg flex items-center justify-center font-mono font-bold text-xs"
+                            style={{
+                              backgroundColor: `${pTeamColor}20`,
+                              color: pTeamColor,
+                              border: `1px solid ${pTeamColor}40`,
+                            }}
+                          >
                             #{p.track_id}
                           </span>
                           <div>
-                            <p className="text-xs font-semibold text-white truncate max-w-[130px]">{p.label}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-semibold text-white truncate max-w-[110px]">{p.label}</p>
+                              {p.team && (
+                                <span
+                                  className="text-[9px] font-mono px-1.5 py-0.2 rounded font-semibold"
+                                  style={{
+                                    backgroundColor: `${pTeamColor}18`,
+                                    color: pTeamColor,
+                                  }}
+                                >
+                                  {p.team}
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] font-mono text-slate-400 block -mt-0.5">
                               Frame {p.first_frame} → {p.last_frame}
                             </span>
@@ -210,25 +332,95 @@ export const PlayerTrackingView = ({
             {currentRealPlayer && (
               <div className="bg-[#101722] border border-[#253244] rounded-2xl p-5 shadow-panel space-y-6">
                 {/* Player Profile Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-[#253244]">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-[#253244] gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-mono font-bold text-base">
+                    <div
+                      className="w-11 h-11 rounded-xl flex items-center justify-center font-mono font-bold text-lg"
+                      style={{
+                        backgroundColor: `${currentRealPlayer.team_color || '#10B981'}25`,
+                        color: currentRealPlayer.team_color || '#10B981',
+                        border: `1.5px solid ${currentRealPlayer.team_color || '#10B981'}50`,
+                      }}
+                    >
                       #{currentRealPlayer.track_id}
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-white tracking-tight">
-                        {currentRealPlayer.label}
-                      </h3>
-                      <p className="text-xs font-mono text-slate-400">
-                        ByteTrack ID: #{currentRealPlayer.track_id} • Target Class: Person (COCO 0)
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-white tracking-tight">
+                          {currentRealPlayer.label}
+                        </h3>
+                        {currentRealPlayer.team && (
+                          <span
+                            className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg border"
+                            style={{
+                              backgroundColor: `${currentRealPlayer.team_color || '#10B981'}15`,
+                              color: currentRealPlayer.team_color || '#10B981',
+                              borderColor: `${currentRealPlayer.team_color || '#10B981'}40`,
+                            }}
+                          >
+                            {currentRealPlayer.team}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-mono text-slate-400 mt-0.5">
+                        ByteTrack ID: #{currentRealPlayer.track_id} • Object Class: Person (COCO 0)
                       </p>
                     </div>
                   </div>
 
-                  <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg">
-                    Active on Screen: {currentRealPlayer.visibility_duration_seconds}s
+                  <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl">
+                    Active Duration: <strong>{currentRealPlayer.visibility_duration_seconds}s</strong>
                   </span>
                 </div>
+
+                {/* Team & Jersey Color Classification Card */}
+                {currentRealPlayer.team && (
+                  <div className="p-4 bg-[#080B10] border border-[#253244] rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      {/* Jersey Swatch */}
+                      <div
+                        className="w-10 h-10 rounded-xl border border-white/20 shadow-md flex items-center justify-center shrink-0"
+                        style={{
+                          backgroundColor: currentRealPlayer.jersey_color_rgb
+                            ? `rgb(${currentRealPlayer.jersey_color_rgb.join(',')})`
+                            : currentRealPlayer.team_color || '#38BDF8',
+                        }}
+                        title={currentRealPlayer.jersey_color_rgb ? `RGB: ${currentRealPlayer.jersey_color_rgb.join(', ')}` : currentRealPlayer.team}
+                      />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-slate-400 uppercase">Jersey Classification</span>
+                          <span
+                            className="text-[10px] font-mono px-1.5 py-0.2 rounded font-bold"
+                            style={{
+                              backgroundColor: `${currentRealPlayer.team_color || '#38BDF8'}20`,
+                              color: currentRealPlayer.team_color || '#38BDF8',
+                            }}
+                          >
+                            {currentRealPlayer.team}
+                          </span>
+                        </div>
+                        <p className="text-xs font-mono text-white font-semibold mt-0.5">
+                          {currentRealPlayer.jersey_color_rgb ? (
+                            <>
+                              RGB({currentRealPlayer.jersey_color_rgb.join(', ')})
+                              <span className="text-slate-500 ml-2 font-normal">
+                                • Hex: #{currentRealPlayer.jersey_color_rgb.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase()}
+                              </span>
+                            </>
+                          ) : (
+                            'Kit Assigned'
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] font-mono text-slate-400 sm:text-right">
+                      <span className="block text-slate-500 text-[10px]">Method</span>
+                      <span>K-Means Torso Clustering (HSV Masked)</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Metric Cards Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

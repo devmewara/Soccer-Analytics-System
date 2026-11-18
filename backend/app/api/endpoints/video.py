@@ -103,10 +103,11 @@ async def upload_video(file: UploadFile = File(...)):
 
 
 @router.post("/{video_id}/analyze", response_model=StartAnalysisResponse)
-async def analyze_video(video_id: str, conf: float = 0.25):
+async def analyze_video(video_id: str, conf: float = 0.25, force: bool = False):
     """
     Triggers asynchronous computer vision detection (Ultralytics YOLO) and
     multi-object tracking (ByteTrack) on the uploaded video file.
+    If force=True, forces re-analysis even if a previous completed job exists.
     """
     video_file = find_video_file(video_id)
     if not video_file or not video_file.exists():
@@ -115,7 +116,7 @@ async def analyze_video(video_id: str, conf: float = 0.25):
             detail=f"Video with ID '{video_id}' not found in uploads directory."
         )
 
-    output_filename = f"annotated_{video_file.name}"
+    output_filename = f"annotated_{video_id}.mp4"
     output_path = settings.UPLOAD_DIR / output_filename
     analytics_path = settings.UPLOAD_DIR / f"{video_id}_analytics.json"
 
@@ -126,6 +127,7 @@ async def analyze_video(video_id: str, conf: float = 0.25):
         output_video_path=output_path,
         analytics_path=analytics_path,
         conf_threshold=conf,
+        force=force,
     )
 
     return StartAnalysisResponse(
@@ -189,8 +191,10 @@ async def list_recent_videos():
             if item.is_file() and item.suffix.lower() in settings.ALLOWED_VIDEO_EXTENSIONS and not item.name.startswith("annotated_"):
                 stat = item.stat()
                 video_id = item.stem
-                # Check if annotated version exists
-                annotated_file = settings.UPLOAD_DIR / f"annotated_{item.name}"
+                # Check if annotated version exists (.mp4 preferred, fallback to legacy extension)
+                annotated_mp4 = settings.UPLOAD_DIR / f"annotated_{video_id}.mp4"
+                annotated_legacy = settings.UPLOAD_DIR / f"annotated_{item.name}"
+                annotated_file = annotated_mp4 if annotated_mp4.exists() else annotated_legacy
                 analytics_file = settings.UPLOAD_DIR / f"{video_id}_analytics.json"
                 is_processed = annotated_file.exists() and analytics_file.exists()
 

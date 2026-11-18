@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.env
+.env.*
+uploads/*
+!uploads/.gitkeep
+*.pt
+*.onnx
+test_*.py
+.DS_Store

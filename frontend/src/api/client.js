@@ -1,11 +1,15 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-export const SERVER_BASE_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8000';
+const RAW_API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/+$/, '');
+const API_BASE_URL = RAW_API_URL.endsWith('/api') ? RAW_API_URL : `${RAW_API_URL}/api`;
+export const SERVER_BASE_URL = (
+  import.meta.env.VITE_SERVER_URL ||
+  API_BASE_URL.replace(/\/api$/, '')
+).replace(/\/+$/, '');
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60s timeout for video uploads
+  timeout: 60000,
 });
 
 export const api = {
@@ -27,6 +31,7 @@ export const api = {
     formData.append('file', file);
 
     const response = await apiClient.post('/video/upload', formData, {
+      timeout: 300000, // 5 min timeout for large match video uploads
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -57,8 +62,8 @@ export const api = {
   },
 
   // Trigger CV analysis pipeline (YOLO11 + ByteTrack)
-  startVideoAnalysis: async (videoId, conf = 0.25) => {
-    const response = await apiClient.post(`/video/${videoId}/analyze?conf=${conf}`);
+  startVideoAnalysis: async (videoId, conf = 0.25, force = false) => {
+    const response = await apiClient.post(`/video/${videoId}/analyze?conf=${conf}&force=${force}`);
     return response.data;
   },
 

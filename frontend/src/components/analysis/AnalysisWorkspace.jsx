@@ -131,14 +131,18 @@ export const AnalysisWorkspace = ({
     return () => stopPolling();
   }, [jobStatus, checkStatus]);
 
-  // Handler to trigger CV analysis
-  const handleStartAnalysis = async () => {
+  // Handler to trigger CV analysis (safely ignores React click events passed as first arg)
+  const handleStartAnalysis = async (forceParam = false) => {
     if (!videoId || isTriggering) return;
+    const shouldForce = forceParam === true;
     setIsTriggering(true);
     setErrorMessage(null);
+    if (shouldForce) {
+      setRealAnalytics(null);
+    }
 
     try {
-      const res = await api.startVideoAnalysis(videoId);
+      const res = await api.startVideoAnalysis(videoId, 0.25, shouldForce);
       setJobStatus(res.status || 'processing');
       setJobProgress(res.progress || 0);
       setJobDetails(res);
@@ -147,7 +151,11 @@ export const AnalysisWorkspace = ({
         pollIntervalRef.current = setInterval(checkStatus, 1200);
       }
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Failed to start video analysis.';
+      const detail = err.response?.data?.detail;
+      const msg =
+        (typeof detail === 'string' ? detail : JSON.stringify(detail)) ||
+        err.message ||
+        'Failed to start video analysis.';
       setErrorMessage(msg);
       setJobStatus('failed');
     } finally {
@@ -367,13 +375,33 @@ export const AnalysisWorkspace = ({
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-sm font-bold text-white tracking-tight">
                       Computer Vision Analysis Complete
                     </h3>
                     <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      {realAnalytics.summary_metrics.unique_players_count} Unique Players Tracked
+                      {realAnalytics.summary_metrics.confirmed_players_count || realAnalytics.summary_metrics.unique_players_count} Confirmed Players
                     </span>
+                    {realAnalytics.summary_metrics.team_a_count !== undefined && (
+                      <span className="text-[10px] font-mono text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                        Team A: {realAnalytics.summary_metrics.team_a_count}
+                      </span>
+                    )}
+                    {realAnalytics.summary_metrics.team_b_count !== undefined && (
+                      <span className="text-[10px] font-mono text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                        Team B: {realAnalytics.summary_metrics.team_b_count}
+                      </span>
+                    )}
+                    {realAnalytics.summary_metrics.officials_count > 0 && (
+                      <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        Refs: {realAnalytics.summary_metrics.officials_count}
+                      </span>
+                    )}
+                    {realAnalytics.summary_metrics.unknown_count > 0 && (
+                      <span className="text-[10px] font-mono text-slate-300 bg-slate-500/10 px-2 py-0.5 rounded border border-slate-500/20">
+                        Unknown: {realAnalytics.summary_metrics.unknown_count}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5 font-mono">
                     {realAnalytics.summary_metrics.total_frames_analyzed} frames analyzed in{' '}
@@ -384,9 +412,9 @@ export const AnalysisWorkspace = ({
               </div>
 
               <button
-                onClick={handleStartAnalysis}
+                onClick={() => handleStartAnalysis(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#17212E] hover:bg-[#1E2B3C] text-slate-300 hover:text-white border border-[#253244] text-xs font-mono transition-colors shrink-0 self-end sm:self-center"
-                title="Re-run inference"
+                title="Force clean re-analysis (resets tracker state)"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Re-run Analysis</span>
@@ -408,7 +436,7 @@ export const AnalysisWorkspace = ({
               </div>
 
               <button
-                onClick={handleStartAnalysis}
+                onClick={() => handleStartAnalysis(true)}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-mono transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -483,21 +511,27 @@ export const AnalysisWorkspace = ({
 
         {/* TAB 3: Team Analytics */}
         {activeTab === 'team_analytics' && (
-          isUserUploadedVideo ? (
+          isUserUploadedVideo && !realAnalytics ? (
             <div className="bg-[#101722] border border-[#253244] rounded-2xl p-8 sm:p-12 text-center shadow-panel">
               <div className="w-14 h-14 rounded-2xl bg-[#17212E] border border-[#253244] flex items-center justify-center text-slate-400 mx-auto mb-4">
                 <BarChart3 className="w-7 h-7 text-sky-400" />
               </div>
               <h3 className="text-base font-bold text-white tracking-tight">
-                Team Tactical Analytics Pending Clustering
+                Team Analytics Requires Video Analysis
               </h3>
               <p className="text-xs text-slate-400 mt-1 max-w-lg mx-auto leading-relaxed">
-                Team formation shapes, average compact defensive blocks, and possession shares 
-                require automated jersey color clustering to distinguish Team A from Team B. 
-                Basic player detection and tracking are active in the Video Analysis and Player Tracking tabs.
+                Click <strong>"Start AI Video Analysis"</strong> in the control banner above to run YOLO11 detection, ByteTrack tracking, and jersey color K-Means clustering.
               </p>
 
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={handleStartAnalysis}
+                  disabled={isTriggering}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs shadow-sm transition-all"
+                >
+                  <Play className="w-3.5 h-3.5 fill-black" />
+                  <span>Start AI Video Analysis</span>
+                </button>
                 <button
                   onClick={onLaunchDemo}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#17212E] hover:bg-[#1E2B3C] text-amber-300 border border-amber-500/30 text-xs font-mono transition-colors"
@@ -508,7 +542,11 @@ export const AnalysisWorkspace = ({
               </div>
             </div>
           ) : (
-            <TeamAnalyticsView data={data} />
+            <TeamAnalyticsView
+              data={data}
+              realAnalytics={realAnalytics}
+              isUserUploaded={isUserUploadedVideo}
+            />
           )
         )}
 
@@ -564,34 +602,75 @@ export const AnalysisWorkspace = ({
 
               {/* Real Analytics Summary Cards */}
               {realAnalytics ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
-                  <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
-                    <span className="text-slate-400 block text-[10px] uppercase">Unique Players Tracked</span>
-                    <span className="text-emerald-400 font-bold text-xl block mt-1">
-                      {realAnalytics.summary_metrics.unique_players_count} players
-                    </span>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-mono">
+                    <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
+                      <span className="text-slate-400 block text-[10px] uppercase">Confirmed Players</span>
+                      <span className="text-emerald-400 font-bold text-xl block mt-1">
+                        {realAnalytics.summary_metrics.confirmed_players_count || realAnalytics.summary_metrics.unique_players_count}
+                        <span className="text-xs text-slate-500 font-normal ml-1">
+                          ({realAnalytics.summary_metrics.total_unique_track_ids || realAnalytics.summary_metrics.unique_players_count} IDs)
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
+                      <span className="text-slate-400 block text-[10px] uppercase">Team Distribution</span>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className="text-sm font-bold text-sky-400">
+                          T-A: {realAnalytics.summary_metrics.team_a_count || 0}
+                        </span>
+                        <span className="text-slate-600">•</span>
+                        <span className="text-sm font-bold text-rose-400">
+                          T-B: {realAnalytics.summary_metrics.team_b_count || 0}
+                        </span>
+                        {realAnalytics.summary_metrics.officials_count > 0 && (
+                          <>
+                            <span className="text-slate-600">•</span>
+                            <span className="text-sm font-bold text-amber-400">
+                              Ref: {realAnalytics.summary_metrics.officials_count}
+                            </span>
+                          </>
+                        )}
+                        {realAnalytics.summary_metrics.unknown_count > 0 && (
+                          <>
+                            <span className="text-slate-600">•</span>
+                            <span className="text-sm font-bold text-slate-300">
+                              Unk: {realAnalytics.summary_metrics.unknown_count}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
+                      <span className="text-slate-400 block text-[10px] uppercase">Frames Analyzed</span>
+                      <span className="text-white font-bold text-xl block mt-1">
+                        {realAnalytics.summary_metrics.total_frames_analyzed} frames
+                      </span>
+                    </div>
+
+                    <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
+                      <span className="text-slate-400 block text-[10px] uppercase">Ball Sightings</span>
+                      <span className="text-amber-400 font-bold text-xl block mt-1">
+                        {realAnalytics.summary_metrics.total_ball_detections} ({realAnalytics.summary_metrics.ball_detection_rate_pct}%)
+                      </span>
+                    </div>
+
+                    <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
+                      <span className="text-slate-400 block text-[10px] uppercase">Inference Speed</span>
+                      <span className="text-emerald-400 font-bold text-xl block mt-1">
+                        {realAnalytics.summary_metrics.avg_inference_fps} FPS
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
-                    <span className="text-slate-400 block text-[10px] uppercase">Frames Analyzed</span>
-                    <span className="text-white font-bold text-xl block mt-1">
-                      {realAnalytics.summary_metrics.total_frames_analyzed} frames
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
-                    <span className="text-slate-400 block text-[10px] uppercase">Ball Sightings</span>
-                    <span className="text-amber-400 font-bold text-xl block mt-1">
-                      {realAnalytics.summary_metrics.total_ball_detections} ({realAnalytics.summary_metrics.ball_detection_rate_pct}%)
-                    </span>
-                  </div>
-
-                  <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
-                    <span className="text-slate-400 block text-[10px] uppercase">Inference Speed</span>
-                    <span className="text-sky-400 font-bold text-xl block mt-1">
-                      {realAnalytics.summary_metrics.avg_inference_fps} FPS
-                    </span>
-                  </div>
+                  {realAnalytics.transient_tracks && realAnalytics.transient_tracks.length > 0 && (
+                    <div className="p-3 bg-[#080B10] border border-[#253244] rounded-xl flex items-center justify-between text-[11px] font-mono text-slate-400">
+                      <span>Transient tracklets isolated (&lt; {realAnalytics.summary_metrics.min_frames_threshold || 25} frames): <strong className="text-amber-400">{realAnalytics.transient_tracks.length}</strong></span>
+                      <span>Confirmed persistence rate: <strong className="text-emerald-400">{((realAnalytics.players.length / (realAnalytics.summary_metrics.total_unique_track_ids || 1)) * 100).toFixed(1)}%</strong></span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">

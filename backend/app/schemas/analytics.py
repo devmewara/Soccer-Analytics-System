@@ -53,6 +53,10 @@ class TrackedPlayerItem(BaseModel):
     avg_bbox_width: float
     avg_bbox_height: float
     last_known_bbox: List[int]
+    is_confirmed: bool = True
+    team: str = "Unassigned"
+    team_color: str = "#10B981"
+    jersey_color_rgb: Optional[List[int]] = None
 
 class RealAnalyticsSummary(BaseModel):
     total_frames_analyzed: int
@@ -63,6 +67,22 @@ class RealAnalyticsSummary(BaseModel):
     ball_detection_rate_pct: float
     processing_time_seconds: float
     avg_inference_fps: float
+    confirmed_players_count: Optional[int] = None
+    total_unique_track_ids: Optional[int] = None
+    short_lived_tracks_count: Optional[int] = None
+    min_frames_threshold: Optional[int] = None
+    avg_track_duration_seconds: Optional[float] = None
+    team_a_name: str = "Team A"
+    team_b_name: str = "Team B"
+    team_a_count: int = 0
+    team_b_count: int = 0
+    officials_count: int = 0
+    unknown_count: int = 0
+    team_a_color: str = "#38BDF8"
+    team_b_color: str = "#F43F5E"
+    unknown_color: str = "#94A3B8"
+    camera_shots_detected: int = 1
+    pitch_filter_applied: bool = True
 
 class RealVideoAnalyticsResponse(BaseModel):
     video_id: str
@@ -72,5 +92,6 @@ class RealVideoAnalyticsResponse(BaseModel):
     video_metadata: Dict[str, Any]
     summary_metrics: RealAnalyticsSummary
     players: List[TrackedPlayerItem]
+    transient_tracks: Optional[List[TrackedPlayerItem]] = None
     timeline: List[Dict[str, Any]]
     disclaimers: Dict[str, str]

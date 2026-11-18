@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 # Base directory for the backend project
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -16,17 +16,21 @@ class Settings:
     # Server settings
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
-    DEBUG: bool = os.getenv("DEBUG", "True").lower() in ("true", "1")
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1")
     
-    # CORS settings
+    # CORS settings (strip whitespace and trailing slashes to avoid origin mismatches)
     CORS_ORIGINS: List[str] = [
-        origin.strip()
+        origin.strip().rstrip("/")
         for origin in os.getenv(
             "CORS_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
         ).split(",")
         if origin.strip()
     ]
+    CORS_ORIGIN_REGEX: Optional[str] = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
+    
+    # Computer vision model settings
+    YOLO_MODEL_PATH: str = os.getenv("YOLO_MODEL_PATH", "yolo11n.pt")
     
     # Upload settings
     UPLOAD_DIR: Path = BASE_DIR / os.getenv("UPLOAD_DIR", "uploads")

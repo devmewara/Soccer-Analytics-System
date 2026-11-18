@@ -1,0 +1,10 @@
+# Ultralytics ByteTrack configuration tuned for Soccer Match Video Analytics
+# Optimized for broadcast camera views, occluded player crossings, and sustained track persistence.
+
+tracker_type: bytetrack
+track_high_thresh: 0.35      # High-confidence threshold for stage-1 Kalman association
+track_low_thresh: 0.10       # Low-confidence threshold for stage-2 association of occluded players
+new_track_thresh: 0.45       # Threshold required to spawn a new candidate player track
+track_buffer: 90             # Frame memory (~2.4s at 38 fps) before dropping occluded/exited players
+match_thresh: 0.80           # IoU association threshold for matching candidate boxes to tracks
+fuse_score: False            # Disable detector score fusion to preserve association during posture changes

@@ -319,32 +319,61 @@ export const MatchAnalysisView = ({
       {hasRealAnalytics && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Tracked Players</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Confirmed Players</span>
             <p className="text-xl font-bold text-emerald-400 font-mono mt-1">
-              {realAnalytics.summary_metrics.unique_players_count}
-              <span className="text-xs text-slate-500 font-normal ml-1">unique</span>
+              {realAnalytics.summary_metrics.confirmed_players_count || realAnalytics.summary_metrics.unique_players_count}
+              <span className="text-[10px] text-slate-500 font-normal ml-1">
+                ({realAnalytics.summary_metrics.total_unique_track_ids || realAnalytics.summary_metrics.unique_players_count} IDs)
+              </span>
             </p>
           </div>
 
           <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Ball Detections</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Team Breakdown</span>
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <span className="text-xs font-mono font-bold text-sky-400">
+                T-A: {realAnalytics.summary_metrics.team_a_count || 0}
+              </span>
+              <span className="text-slate-600">•</span>
+              <span className="text-xs font-mono font-bold text-rose-400">
+                T-B: {realAnalytics.summary_metrics.team_b_count || 0}
+              </span>
+              {realAnalytics.summary_metrics.officials_count > 0 && (
+                <>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-xs font-mono font-bold text-amber-400">
+                    Ref: {realAnalytics.summary_metrics.officials_count}
+                  </span>
+                </>
+              )}
+              {realAnalytics.summary_metrics.unknown_count > 0 && (
+                <>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-xs font-mono font-bold text-slate-400">
+                    Unk: {realAnalytics.summary_metrics.unknown_count}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Ball Sightings</span>
             <p className="text-xl font-bold text-amber-400 font-mono mt-1">
               {realAnalytics.summary_metrics.total_ball_detections}
-              <span className="text-xs text-slate-500 font-normal ml-1">sightings</span>
+              <span className="text-xs text-slate-500 font-normal ml-1">
+                ({realAnalytics.summary_metrics.ball_detection_rate_pct}%)
+              </span>
             </p>
           </div>
 
           <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Avg Players/Frame</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Player Detections</span>
             <p className="text-xl font-bold text-white font-mono mt-1">
-              {realAnalytics.summary_metrics.avg_players_per_frame}
-            </p>
-          </div>
-
-          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Ball Coverage</span>
-            <p className="text-xl font-bold text-sky-400 font-mono mt-1">
-              {realAnalytics.summary_metrics.ball_detection_rate_pct}%
+              {realAnalytics.summary_metrics.total_player_detections || 0}
+              <span className="text-[10px] text-slate-500 font-normal ml-1">
+                ({realAnalytics.summary_metrics.avg_players_per_frame}/f)
+              </span>
             </p>
           </div>
 
@@ -357,10 +386,12 @@ export const MatchAnalysisView = ({
           </div>
 
           <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Frames Analyzed</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Frames / Duration</span>
             <p className="text-xl font-bold text-white font-mono mt-1">
               {realAnalytics.summary_metrics.total_frames_analyzed}
-              <span className="text-xs text-slate-500 font-normal ml-1">frames</span>
+              <span className="text-xs text-slate-500 font-normal ml-1">
+                ({realAnalytics.video_metadata?.duration_seconds ?? '0.0'}s)
+              </span>
             </p>
           </div>
         </div>
@@ -783,44 +814,84 @@ export const MatchAnalysisView = ({
       {/* Real Tracked Players Quick Roster (If real analytics available) */}
       {hasRealAnalytics && realAnalytics.players && realAnalytics.players.length > 0 && (
         <div className="bg-[#101722] border border-[#253244] rounded-2xl p-5 shadow-panel">
-          <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#253244] mb-3.5 gap-2">
             <div>
               <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
                 <UserCheck className="w-4 h-4 text-emerald-400" />
-                <span>Tracked Player Instances (ByteTrack IDs)</span>
+                <span>Tracked Player Instances (ByteTrack IDs & Teams)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Individual persistent player tracklets detected across video frames.
+                Confirmed player tracklets with jersey-color team assignments.
               </p>
             </div>
-            <span className="text-xs font-mono text-emerald-400 font-bold">
-              {realAnalytics.players.length} Players Tracked
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                Team A: {realAnalytics.summary_metrics.team_a_count || 0}
+              </span>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                Team B: {realAnalytics.summary_metrics.team_b_count || 0}
+              </span>
+              {realAnalytics.summary_metrics.officials_count > 0 && (
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  Refs: {realAnalytics.summary_metrics.officials_count}
+                </span>
+              )}
+              {realAnalytics.summary_metrics.unknown_count > 0 && (
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-500/10 text-slate-300 border border-slate-500/20">
+                  Unk: {realAnalytics.summary_metrics.unknown_count}
+                </span>
+              )}
+              <span className="text-xs font-mono text-emerald-400 font-bold ml-1">
+                {realAnalytics.players.length} Confirmed Players
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            {realAnalytics.players.map((p) => (
-              <div
-                key={p.track_id}
-                onClick={() => onSelectPlayer && onSelectPlayer(p.track_id)}
-                className="p-3 bg-[#080B10] border border-[#253244] hover:border-emerald-500/50 rounded-xl cursor-pointer transition-colors"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-mono font-bold text-emerald-400">
-                    #{p.track_id}
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-400">
-                    {p.visibility_duration_seconds}s
-                  </span>
+            {realAnalytics.players.map((p) => {
+              const teamCol = p.team_color || '#10B981';
+              return (
+                <div
+                  key={p.track_id}
+                  onClick={() => onSelectPlayer && onSelectPlayer(p.track_id)}
+                  className="p-3 bg-[#080B10] border border-[#253244] hover:border-emerald-500/50 rounded-xl cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span
+                      className="text-xs font-mono font-bold px-1.5 py-0.2 rounded"
+                      style={{ backgroundColor: `${teamCol}20`, color: teamCol }}
+                    >
+                      #{p.track_id}
+                    </span>
+                    <span
+                      className="text-[9px] font-mono px-1.5 py-0.2 rounded font-medium"
+                      style={{ backgroundColor: `${teamCol}15`, color: teamCol }}
+                    >
+                      {p.team || 'Player'}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-white truncate">{p.label}</p>
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mt-1.5 pt-1.5 border-t border-[#17212E]">
+                    <span>{p.detections_count} frames</span>
+                    <span className="text-emerald-400">{(p.avg_confidence * 100).toFixed(0)}%</span>
+                  </div>
                 </div>
-                <p className="text-xs font-semibold text-white truncate">{p.label}</p>
-                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mt-1.5 pt-1.5 border-t border-[#17212E]">
-                  <span>{p.detections_count} frames</span>
-                  <span className="text-emerald-400">{(p.avg_confidence * 100).toFixed(0)}%</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+
+          {/* Transient Tracks audit summary (if present) */}
+          {realAnalytics.transient_tracks && realAnalytics.transient_tracks.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-[#17212E] flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Transient noise tracklets (&lt; {realAnalytics.summary_metrics.min_frames_threshold || 25} frames): {realAnalytics.transient_tracks.length} tracklets isolated from main roster</span>
+              </span>
+              <span className="text-slate-500">
+                Total IDs: {realAnalytics.summary_metrics.total_unique_track_ids}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

@@ -104,7 +104,7 @@ export const VideoUploadSection = ({ onUploadSuccess, onSelectVideoForAnalysis, 
       const detail =
         err.response?.data?.detail ||
         err.message ||
-        'Upload failed. Ensure FastAPI backend is running on http://localhost:8000';
+        'Upload failed. Unable to reach the backend API server.';
       setErrorMessage(detail);
     } finally {
       setUploading(false);
