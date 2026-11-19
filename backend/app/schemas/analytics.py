@@ -42,6 +42,22 @@ class OverviewStatsResponse(BaseModel):
     pipeline_status: Dict[str, str]
 
 # Real Computer Vision Tracking Analytics Schemas
+class FramePlayerTrackingItem(BaseModel):
+    id: int
+    team: str
+    x: float
+    y: float
+
+class FrameBallTrackingItem(BaseModel):
+    x: float
+    y: float
+
+class FrameTrackingRecord(BaseModel):
+    frame: int
+    t: float
+    players: List[FramePlayerTrackingItem]
+    ball: Optional[FrameBallTrackingItem] = None
+
 class TrackedPlayerItem(BaseModel):
     track_id: int
     label: str
@@ -94,4 +110,5 @@ class RealVideoAnalyticsResponse(BaseModel):
     players: List[TrackedPlayerItem]
     transient_tracks: Optional[List[TrackedPlayerItem]] = None
     timeline: List[Dict[str, Any]]
+    frame_tracking: Optional[List[FrameTrackingRecord]] = None
     disclaimers: Dict[str, str]

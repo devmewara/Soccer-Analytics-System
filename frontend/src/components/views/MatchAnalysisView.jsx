@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Play,
   Pause,
@@ -25,7 +25,47 @@ import {
 import DemoBanner from '../common/DemoBanner';
 import DemoBadge from '../common/DemoBadge';
 import PitchCanvas from '../common/PitchCanvas';
+import CameraRelativeMiniMap from '../common/CameraRelativeMiniMap';
 import { api, SERVER_BASE_URL } from '../../api/client';
+
+/**
+ * Binary search to efficiently find the tracking record closest to current playback time (seconds).
+ * O(log N) lookup avoids expensive linear array searches on every video playback update.
+ */
+function findClosestTrackingRecord(trackingList, timeSec) {
+  if (!trackingList || trackingList.length === 0) return null;
+  const targetTime = typeof timeSec === 'number' && !isNaN(timeSec) ? timeSec : 0;
+  if (targetTime <= trackingList[0].t) return trackingList[0];
+  if (targetTime >= trackingList[trackingList.length - 1].t) {
+    return trackingList[trackingList.length - 1];
+  }
+
+  let low = 0;
+  let high = trackingList.length - 1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const midTime = trackingList[mid].t;
+
+    if (midTime === targetTime) {
+      return trackingList[mid];
+    } else if (midTime < targetTime) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  const prevRecord = trackingList[high];
+  const nextRecord = trackingList[low];
+
+  if (!prevRecord) return nextRecord;
+  if (!nextRecord) return prevRecord;
+
+  return Math.abs(prevRecord.t - targetTime) <= Math.abs(nextRecord.t - targetTime)
+    ? prevRecord
+    : nextRecord;
+}
 
 export const MatchAnalysisView = ({
   data,
@@ -168,6 +208,18 @@ export const MatchAnalysisView = ({
 
   const isUserUploadedVideo = Boolean(activeVideo?.stream_url || activeVideo?.saved_filename);
   const hasRealAnalytics = Boolean(realAnalytics && realAnalytics.summary_metrics);
+  const hasFrameTracking = Boolean(
+    isUserUploadedVideo &&
+      realAnalytics?.frame_tracking &&
+      Array.isArray(realAnalytics.frame_tracking) &&
+      realAnalytics.frame_tracking.length > 0
+  );
+
+  // Synchronized frame tracking record for the current playback time
+  const activeFrameRecord = useMemo(() => {
+    if (!hasFrameTracking) return null;
+    return findClosestTrackingRecord(realAnalytics.frame_tracking, currentTime);
+  }, [hasFrameTracking, realAnalytics?.frame_tracking, currentTime]);
 
   // Determine active video URL
   let videoStreamUrl = null;
@@ -692,20 +744,41 @@ export const MatchAnalysisView = ({
         {(viewMode === 'split' || viewMode === 'pitch') && (
           <div className="bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between">
             <div>
-              {/* Pitch Canvas Header */}
+              {/* Pitch Canvas / Mini-Map Header */}
               <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span className={`w-2 h-2 rounded-full ${hasFrameTracking ? 'bg-emerald-400 animate-pulse' : 'bg-emerald-400'}`}></span>
                   <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                    2D Pitch Map (FIFA 105m × 68m)
+                    {isUserUploadedVideo
+                      ? hasFrameTracking
+                        ? 'Camera-Relative Mini-Map'
+                        : '2D Pitch Map (FIFA 105m × 68m)'
+                      : '2D Pitch Map (FIFA 105m × 68m)'}
                   </span>
                 </div>
 
                 <div className="flex items-center gap-2">
                   {isUserUploadedVideo ? (
-                    <span className="text-[10px] font-mono text-slate-400 bg-[#080B10] px-2 py-0.5 rounded border border-[#253244]">
-                      Homography: Pending Calibration
-                    </span>
+                    hasFrameTracking ? (
+                      <div className="flex items-center gap-2 text-[10px] font-mono">
+                        <span className="text-slate-300 bg-[#080B10] px-2.5 py-0.5 rounded border border-[#253244]">
+                          Frame {activeFrameRecord?.frame ?? 0} ({formatTimecode(currentTime)})
+                        </span>
+                        <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">
+                          {activeFrameRecord?.players?.length || 0} Visible
+                        </span>
+                        {activeFrameRecord?.ball && (
+                          <span className="text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/25 hidden sm:inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse"></span>
+                            Ball
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] font-mono text-slate-400 bg-[#080B10] px-2 py-0.5 rounded border border-[#253244]">
+                        Homography: Pending Calibration
+                      </span>
+                    )
                   ) : (
                     <button
                       onClick={() => setShowZoneOverlay(!showZoneOverlay)}
@@ -721,72 +794,93 @@ export const MatchAnalysisView = ({
                 </div>
               </div>
 
-              {/* 2D Pitch Canvas */}
-              <PitchCanvas
-                showZones={showZoneOverlay}
-                activeZone={selectedZone}
-                onZoneClick={(zoneId) => setSelectedZone(zoneId)}
-                heightClass={viewMode === 'pitch' ? 'h-[460px]' : 'h-72 sm:h-80 md:h-[340px]'}
-              >
-                {!isUserUploadedVideo ? (
-                  /* 22 Player Nodes on Calibrated Pitch (Modeled Sample Data) */
-                  players.map((p) => {
-                    const isSelected = p.id === selectedPlayerId;
-                    const isTeamA = p.team_id === 'man_blue';
+              {/* Visualization Canvas: CameraRelativeMiniMap (Real Footage with frame_tracking) or PitchCanvas (Demo / Fallback) */}
+              {isUserUploadedVideo && hasFrameTracking ? (
+                <CameraRelativeMiniMap
+                  frameRecord={activeFrameRecord}
+                  currentTime={currentTime}
+                  selectedPlayerId={selectedPlayerId}
+                  onSelectPlayer={(id) => {
+                    setSelectedPlayerId(id);
+                    if (onSelectPlayer) onSelectPlayer(id);
+                  }}
+                  heightClass={viewMode === 'pitch' ? 'h-[460px]' : 'h-72 sm:h-80 md:h-[340px]'}
+                  teamAName={realAnalytics?.summary_metrics?.team_a_name || 'Team A'}
+                  teamBName={realAnalytics?.summary_metrics?.team_b_name || 'Team B'}
+                  teamAColor={realAnalytics?.summary_metrics?.team_a_color || '#38BDF8'}
+                  teamBColor={realAnalytics?.summary_metrics?.team_b_color || '#F43F5E'}
+                />
+              ) : (
+                <PitchCanvas
+                  showZones={showZoneOverlay}
+                  activeZone={selectedZone}
+                  onZoneClick={(zoneId) => setSelectedZone(zoneId)}
+                  heightClass={viewMode === 'pitch' ? 'h-[460px]' : 'h-72 sm:h-80 md:h-[340px]'}
+                >
+                  {!isUserUploadedVideo ? (
+                    /* 22 Player Nodes on Calibrated Pitch (Modeled Sample Data) */
+                    players.map((p) => {
+                      const isSelected = p.id === selectedPlayerId;
+                      const isTeamA = p.team_id === 'man_blue';
 
-                    return (
-                      <div
-                        key={p.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPlayerId(p.id);
-                          if (onSelectPlayer) onSelectPlayer(p.id);
-                        }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer pointer-events-auto transition-transform hover:scale-125 group z-20"
-                        style={{ left: `${p.pitch_x}%`, top: `${p.pitch_y}%` }}
-                      >
+                      return (
                         <div
-                          className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-mono font-bold text-[9px] sm:text-[10px] text-black shadow transition-all ${
-                            isTeamA
-                              ? 'bg-sky-400 border border-white'
-                              : 'bg-rose-500 text-white border border-white'
-                          } ${isSelected ? 'ring-2 ring-emerald-400 scale-125' : ''}`}
+                          key={p.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPlayerId(p.id);
+                            if (onSelectPlayer) onSelectPlayer(p.id);
+                          }}
+                          className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer pointer-events-auto transition-transform hover:scale-125 group z-20"
+                          style={{ left: `${p.pitch_x}%`, top: `${p.pitch_y}%` }}
                         >
-                          {p.jersey_number}
-                        </div>
+                          <div
+                            className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center font-mono font-bold text-[9px] sm:text-[10px] text-black shadow transition-all ${
+                              isTeamA
+                                ? 'bg-sky-400 border border-white'
+                                : 'bg-rose-500 text-white border border-white'
+                            } ${isSelected ? 'ring-2 ring-emerald-400 scale-125' : ''}`}
+                          >
+                            {p.jersey_number}
+                          </div>
 
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-[#080B10] text-white text-[9px] font-mono px-2 py-0.5 rounded border border-[#253244] whitespace-nowrap z-30">
-                          {p.short_name} (Sample)
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-[#080B10] text-white text-[9px] font-mono px-2 py-0.5 rounded border border-[#253244] whitespace-nowrap z-30">
+                            {p.short_name} (Sample)
+                          </div>
                         </div>
+                      );
+                    })
+                  ) : (
+                    /* User uploaded footage overlay note on pitch (Fallback when frame_tracking is missing) */
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
+                      <div className="bg-[#080B10]/90 border border-[#253244] rounded-xl p-4 max-w-sm text-center">
+                        <p className="text-xs font-semibold text-white">2D Pitch Projection Awaiting Homography</p>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                          Player pixel coordinates from YOLO & ByteTrack will be mapped onto this 2D FIFA coordinate system once 4-point pitch corner homography calibration is computed.
+                        </p>
                       </div>
-                    );
-                  })
-                ) : (
-                  /* User uploaded footage overlay note on pitch */
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
-                    <div className="bg-[#080B10]/90 border border-[#253244] rounded-xl p-4 max-w-sm text-center">
-                      <p className="text-xs font-semibold text-white">2D Pitch Projection Awaiting Homography</p>
-                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                        Player pixel coordinates from YOLO & ByteTrack will be mapped onto this 2D FIFA coordinate system once 4-point pitch corner homography calibration is computed.
-                      </p>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Match Ball Marker (Demo mode) */}
-                {!isUserUploadedVideo && (
-                  <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30">
-                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm shadow-amber-400"></div>
-                  </div>
-                )}
-              </PitchCanvas>
+                  {/* Match Ball Marker (Demo mode) */}
+                  {!isUserUploadedVideo && (
+                    <div className="absolute left-[58%] top-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30">
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white shadow-sm shadow-amber-400"></div>
+                    </div>
+                  )}
+                </PitchCanvas>
+              )}
 
               {/* Selected Zone Analysis Summary or Real Tracking Note */}
               <div className="mt-4 p-3.5 rounded-xl bg-[#080B10] border border-[#253244] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-white font-mono uppercase tracking-wide">
-                      {isUserUploadedVideo ? 'Computer Vision Telemetry' : activeZoneObj.label}
+                      {isUserUploadedVideo
+                        ? hasFrameTracking
+                          ? 'Synchronized Tracking Telemetry'
+                          : 'Computer Vision Telemetry'
+                        : activeZoneObj.label}
                     </span>
                     <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       {isUserUploadedVideo ? 'ACTIVE ENGINE' : 'SAMPLE DATA'}
@@ -794,7 +888,9 @@ export const MatchAnalysisView = ({
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                     {isUserUploadedVideo
-                      ? 'YOLO11n object detection detects players (COCO 0) and the football (COCO 32). ByteTrack assigns persistent tracking IDs across consecutive frames.'
+                      ? hasFrameTracking
+                        ? `Live video-synchronized player and ball tracking. Markers update across ${realAnalytics.summary_metrics.total_frames_analyzed} analyzed frames directly matching playback timing.`
+                        : 'YOLO11n object detection detects players (COCO 0) and the football (COCO 32). ByteTrack assigns persistent tracking IDs across consecutive frames.'
                       : activeZoneObj.desc}
                   </p>
                 </div>

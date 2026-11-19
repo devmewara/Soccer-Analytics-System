@@ -643,6 +643,7 @@ class ComputerVisionPipelineService:
             total_player_detections = 0
             total_ball_detections = 0
             timeline: List[Dict[str, Any]] = []
+            frame_tracking: List[Dict[str, Any]] = []
 
             frame_idx = 0
             inference_durations: List[float] = []
@@ -693,6 +694,7 @@ class ComputerVisionPipelineService:
                 frame_players_count = 0
                 frame_ball_detected = False
                 best_ball = None  # (conf, x1, y1, x2, y2)
+                frame_players_data: List[Dict[str, Any]] = []
 
                 boxes = results.boxes
                 if boxes is not None and len(boxes) > 0:
@@ -819,7 +821,20 @@ class ComputerVisionPipelineService:
                             text_color=text_color,
                         )
 
+                        # Record normalized ground-contact coordinates for Tactical Mini-Map
+                        center_x = (x1 + x2) / 2.0
+                        feet_y = float(y2)
+                        norm_x = round(float(center_x / width * 100.0), 1)
+                        norm_y = round(float(feet_y / height * 100.0), 1)
+                        frame_players_data.append({
+                            "id": track_id,
+                            "team": display_team,
+                            "x": max(0.0, min(100.0, norm_x)),
+                            "y": max(0.0, min(100.0, norm_y)),
+                        })
+
                 # Render validated on-pitch ball (at most one per frame, separate from player stats)
+                ball_record = None
                 if best_ball is not None:
                     b_conf, bx1, by1, bx2, by2 = best_ball
                     frame_ball_detected = True
@@ -833,6 +848,14 @@ class ComputerVisionPipelineService:
                         bg_color=self.COLOR_BALL_BOX,
                         text_color=self.COLOR_BALL_TEXT,
                     )
+                    ball_cx = (bx1 + bx2) / 2.0
+                    ball_cy = (by1 + by2) / 2.0
+                    norm_bx = round(float(ball_cx / width * 100.0), 1)
+                    norm_by = round(float(ball_cy / height * 100.0), 1)
+                    ball_record = {
+                        "x": max(0.0, min(100.0, norm_bx)),
+                        "y": max(0.0, min(100.0, norm_by)),
+                    }
 
                 # Record timeline sample (every frame or sample rate)
                 timeline.append({
@@ -840,6 +863,14 @@ class ComputerVisionPipelineService:
                     "timestamp_sec": round(frame_idx / fps, 2),
                     "players_detected": frame_players_count,
                     "ball_detected": frame_ball_detected,
+                })
+
+                # Record frame-by-frame player and ball tracking coordinates for tactical mini-map
+                frame_tracking.append({
+                    "frame": frame_idx,
+                    "t": round(frame_idx / fps, 2),
+                    "players": frame_players_data,
+                    "ball": ball_record,
                 })
 
                 # Draw top HUD watermark badge on output video
@@ -1021,10 +1052,12 @@ class ComputerVisionPipelineService:
                 "players": confirmed_players,  # Confirmed player roster (aligns 1:1 with summary cards)
                 "transient_tracks": transient_players,  # Available for audit and transparency
                 "timeline": timeline,
+                "frame_tracking": frame_tracking,
                 "disclaimers": {
                     "homography": "Metric physical speed (km/h) and real pitch distance (meters) require 4-point homography camera calibration to map 2D video pixel coordinates onto standard 105m × 68m FIFA pitch coordinates.",
                     "team_classification": "Automated team classification performs upper-torso jersey color extraction with green pitch masking and K-Means clustering, separating Team A, Team B, Match Officials, and Unknown/ambiguous uniforms.",
                     "track_count_derivation": "Confirmed track count represents persistent tracked instances across the video. In broadcast soccer, camera cuts and framing changes cause 2D trackers to spawn separate sequential track IDs for the same visible players across different camera shots (e.g., Shot 1 vs Shot 3). Average simultaneously visible on-pitch players per frame is measured directly.",
+                    "frame_tracking_coordinates": "Frame tracking positions (x, y) are normalized video coordinates (0-100% of frame width and height, where y represents ground-contact feet position), not 2D calibrated pitch coordinates.",
                 },
             }
 
