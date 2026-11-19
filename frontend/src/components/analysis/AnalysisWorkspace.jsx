@@ -380,16 +380,19 @@ export const AnalysisWorkspace = ({
                       Computer Vision Analysis Complete
                     </h3>
                     <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      {realAnalytics.summary_metrics.confirmed_players_count || realAnalytics.summary_metrics.unique_players_count} Confirmed Players
+                      {realAnalytics.summary_metrics.confirmed_players_count || realAnalytics.summary_metrics.unique_players_count} Confirmed Track IDs
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-300 bg-[#080B10] px-2 py-0.5 rounded border border-[#253244]">
+                      Avg Visible: {realAnalytics.summary_metrics.avg_players_per_frame}/f
                     </span>
                     {realAnalytics.summary_metrics.team_a_count !== undefined && (
                       <span className="text-[10px] font-mono text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
-                        Team A: {realAnalytics.summary_metrics.team_a_count}
+                        Team A IDs: {realAnalytics.summary_metrics.team_a_count}
                       </span>
                     )}
                     {realAnalytics.summary_metrics.team_b_count !== undefined && (
                       <span className="text-[10px] font-mono text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                        Team B: {realAnalytics.summary_metrics.team_b_count}
+                        Team B IDs: {realAnalytics.summary_metrics.team_b_count}
                       </span>
                     )}
                     {realAnalytics.summary_metrics.officials_count > 0 && (
@@ -605,17 +608,17 @@ export const AnalysisWorkspace = ({
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs font-mono">
                     <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
-                      <span className="text-slate-400 block text-[10px] uppercase">Confirmed Players</span>
+                      <span className="text-slate-400 block text-[10px] uppercase">Confirmed Track IDs</span>
                       <span className="text-emerald-400 font-bold text-xl block mt-1">
                         {realAnalytics.summary_metrics.confirmed_players_count || realAnalytics.summary_metrics.unique_players_count}
                         <span className="text-xs text-slate-500 font-normal ml-1">
-                          ({realAnalytics.summary_metrics.total_unique_track_ids || realAnalytics.summary_metrics.unique_players_count} IDs)
+                          ({realAnalytics.summary_metrics.total_unique_track_ids || realAnalytics.summary_metrics.unique_players_count} total)
                         </span>
                       </span>
                     </div>
 
                     <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
-                      <span className="text-slate-400 block text-[10px] uppercase">Team Distribution</span>
+                      <span className="text-slate-400 block text-[10px] uppercase">Team Track IDs</span>
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         <span className="text-sm font-bold text-sky-400">
                           T-A: {realAnalytics.summary_metrics.team_a_count || 0}
@@ -644,9 +647,12 @@ export const AnalysisWorkspace = ({
                     </div>
 
                     <div className="p-3.5 bg-[#080B10] border border-[#253244] rounded-xl">
-                      <span className="text-slate-400 block text-[10px] uppercase">Frames Analyzed</span>
+                      <span className="text-slate-400 block text-[10px] uppercase">Avg Visible / Frame</span>
                       <span className="text-white font-bold text-xl block mt-1">
-                        {realAnalytics.summary_metrics.total_frames_analyzed} frames
+                        {realAnalytics.summary_metrics.avg_players_per_frame}
+                        <span className="text-xs text-slate-500 font-normal ml-1">
+                          ({realAnalytics.summary_metrics.total_frames_analyzed}f)
+                        </span>
                       </span>
                     </div>
 

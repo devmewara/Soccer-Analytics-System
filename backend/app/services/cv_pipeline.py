@@ -16,10 +16,12 @@ This module implements the production computer vision and tracking engine:
 import os
 import time
 import json
+import yaml
 import shutil
 import logging
 import subprocess
 import threading
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from collections import Counter
@@ -126,12 +128,77 @@ class ComputerVisionPipelineService:
     COLOR_HUD_BORDER = (68, 50, 37)         # Slate border
     COLOR_HUD_TEXT = (240, 245, 250)        # Clean White
 
-    def __init__(self, model_weights: str = "yolo11n.pt"):
+    def __init__(self, model_weights: str = "yolo11n.pt", imgsz: int = 1280, device: str = "auto"):
         self.model_weights = model_weights
+        self.imgsz = imgsz
+        self.device_pref = device
         self._model = None
         self._model_lock = threading.Lock()
         self._inference_lock = threading.Lock()
         self.job_manager = VideoJobManager()
+
+    def _resolve_inference_device(self) -> str:
+        """Selects best available inference device (CUDA -> Apple Silicon MPS -> CPU) safely."""
+        pref = (self.device_pref or "auto").strip().lower()
+        if pref in ("cpu", "cuda", "mps"):
+            return pref
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return "mps"
+        except Exception as err:
+            logger.warning(f"Device auto-detection fallback to CPU: {err}")
+        return "cpu"
+
+    def _predict_safe(self, model, frame: np.ndarray, classes: List[int], conf: float, imgsz: int, device: str):
+        """Runs YOLO prediction with automatic CPU fallback if MPS/GPU throws a runtime error."""
+        try:
+            res = model.predict(
+                source=frame,
+                classes=classes,
+                conf=conf,
+                imgsz=imgsz,
+                device=device,
+                verbose=False,
+            )[0]
+            return res, device
+        except Exception as err:
+            if device != "cpu":
+                logger.warning(f"Inference failed on device='{device}' ({err}); falling back safely to CPU.")
+                res = model.predict(
+                    source=frame,
+                    classes=classes,
+                    conf=conf,
+                    imgsz=imgsz,
+                    device="cpu",
+                    verbose=False,
+                )[0]
+                return res, "cpu"
+            raise
+
+    def _create_tracker(self):
+        """Instantiates an isolated per-job BYTETracker from soccer_bytetrack.yaml."""
+        from ultralytics.trackers.byte_tracker import BYTETracker
+
+        default_cfg = {
+            "tracker_type": "bytetrack",
+            "track_high_thresh": 0.30,
+            "track_low_thresh": 0.10,
+            "new_track_thresh": 0.40,
+            "track_buffer": 90,
+            "match_thresh": 0.85,
+            "fuse_score": True,
+        }
+        if TRACKER_CONFIG_PATH.exists():
+            try:
+                with open(TRACKER_CONFIG_PATH, "r") as f:
+                    loaded = yaml.safe_load(f) or {}
+                default_cfg.update(loaded)
+            except Exception as err:
+                logger.warning(f"Could not load {TRACKER_CONFIG_PATH}: {err}; using defaults.")
+        return BYTETracker(args=SimpleNamespace(**default_cfg))
 
     def _get_model(self):
         """Thread-safe lazy loader for Ultralytics YOLO model."""
@@ -140,8 +207,11 @@ class ComputerVisionPipelineService:
                 if self._model is None:
                     from ultralytics import YOLO
                     try:
-                        logger.info(f"Loading YOLO model with weights: {self.model_weights}")
-                        self._model = YOLO(self.model_weights)
+                        weights_path = self.model_weights
+                        if not Path(weights_path).exists() and (settings.BASE_DIR / weights_path).exists():
+                            weights_path = str(settings.BASE_DIR / weights_path)
+                        logger.info(f"Loading YOLO model with weights: {weights_path}")
+                        self._model = YOLO(weights_path)
                     except Exception as err:
                         logger.warning(f"Failed to load {self.model_weights}: {err}. Falling back to yolov8n.pt")
                         self._model = YOLO("yolov8n.pt")
@@ -214,21 +284,107 @@ class ComputerVisionPipelineService:
 
         return initial_job
 
-    def _extract_pitch_hull(self, frame: np.ndarray) -> Optional[np.ndarray]:
-        """Extracts the convex hull of the green playing field in HSV color space."""
+    def _extract_pitch_contour(self, frame: np.ndarray) -> tuple[Optional[np.ndarray], float]:
+        """
+        Extracts the actual playing-field grass contour in HSV color space (without convexHull
+        inflation). Runs at 4x downscale for fast M1 execution, strips neon broadcast logos
+        (e.g. FIFA+) via saturation/value caps + morphological opening, and closes pitch lines.
+        Returns (contour_float32, pitch_area_ratio).
+        """
         h, w = frame.shape[:2]
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        grass_mask = cv2.inRange(hsv, (32, 35, 35), (85, 255, 255))
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 25))
-        closed = cv2.morphologyEx(grass_mask, cv2.MORPH_CLOSE, kernel)
+        sw, sh = max(1, w // 4), max(1, h // 4)
+        small = cv2.resize(frame, (sw, sh))
+        hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+        # Natural pitch grass range (excludes hyper-saturated neon broadcast graphics)
+        grass_mask = cv2.inRange(hsv, (32, 35, 35), (85, 215, 220))
+        # Morphological opening removes isolated green logos/banners before closing pitch lines
+        opened = cv2.morphologyEx(
+            grass_mask,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7)),
+        )
+        closed = cv2.morphologyEx(
+            opened,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (25, 25)),
+        )
         contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
-            return None
+            return None, 0.0
         pitch_contour = max(contours, key=cv2.contourArea)
-        # Only use pitch contour if it represents a meaningful portion of the frame (>= 15%)
-        if cv2.contourArea(pitch_contour) < (w * h * 0.15):
-            return None
-        return cv2.convexHull(pitch_contour)
+        area_ratio = cv2.contourArea(pitch_contour) / float(sw * sh)
+        if area_ratio < 0.15:
+            return None, area_ratio
+        eps = 0.003 * cv2.arcLength(pitch_contour, True)
+        approx = cv2.approxPolyDP(pitch_contour, eps, True)
+        scaled = (approx * 4).astype(np.float32)
+        return scaled, area_ratio
+
+    def _is_on_pitch_person(
+        self,
+        frame: np.ndarray,
+        x1: int,
+        y1: int,
+        x2: int,
+        y2: int,
+        pitch_contour: Optional[np.ndarray],
+        pitch_area_ratio: float,
+    ) -> bool:
+        """
+        Validates whether a detected person's ground contact point (feet) lies inside
+        the actual playing field, rejecting upper stands, ad-board stewards, and
+        foreground sideline personnel (e.g. truncated bottom-border dugout/crowd figures).
+        """
+        if pitch_contour is None or pitch_area_ratio < 0.25:
+            # Close-up / zoom camera shot where players dominate frame
+            return True
+
+        height, width = frame.shape[:2]
+        cx = float((x1 + x2) / 2.0)
+        feet = (cx, float(y2))
+        dist = cv2.pointPolygonTest(pitch_contour, feet, True)
+
+        # Measure local natural grass around feet (20x30 px patch)
+        fy1, fy2 = max(0, y2 - 10), min(height, y2 + 10)
+        fx1, fx2 = max(0, int(cx) - 15), min(width, int(cx) + 15)
+        feet_patch = frame[fy1:fy2, fx1:fx2]
+        feet_grass = 0.0
+        if feet_patch.size > 0:
+            fp_hsv = cv2.cvtColor(feet_patch, cv2.COLOR_BGR2HSV)
+            fp_grass = cv2.inRange(fp_hsv, (32, 35, 35), (85, 220, 225))
+            feet_grass = float(np.count_nonzero(fp_grass)) / float(fp_grass.size)
+
+        # Allow genuine players right at left/right broadcast frame edges
+        if x1 <= 8 or x2 >= width - 8:
+            return dist >= -5.0 and feet_grass >= 0.30
+
+        # Standard wide-angle pitch requirement: strictly inside grass boundary with grass at feet
+        return dist >= 15.0 and feet_grass >= 0.15
+
+    def _team_style(self, team_name: str) -> tuple[tuple, tuple, tuple, str]:
+        """Returns (box_color, label_bg, text_color, hex_color) for a team label."""
+        if team_name == "Team A":
+            return self.COLOR_TEAM_A_BOX, self.COLOR_TEAM_A_LABEL_BG, self.COLOR_TEAM_A_TEXT, self.HEX_TEAM_A
+        if team_name == "Team B":
+            return self.COLOR_TEAM_B_BOX, self.COLOR_TEAM_B_LABEL_BG, self.COLOR_TEAM_B_TEXT, self.HEX_TEAM_B
+        if team_name == "Referee":
+            return self.COLOR_OFFICIAL_BOX, self.COLOR_OFFICIAL_LABEL_BG, self.COLOR_OFFICIAL_TEXT, self.HEX_OFFICIAL
+        return self.COLOR_UNKNOWN_BOX, self.COLOR_UNKNOWN_LABEL_BG, self.COLOR_UNKNOWN_TEXT, self.HEX_UNKNOWN
+
+    def _smooth_team_label(self, votes: List[str], window: int = 15) -> str:
+        """
+        Temporally smooths per-frame overlay team labels over the recent sliding window
+        to eliminate 1-2 frame occlusion flickers without hiding genuinely Unknown tracks.
+        """
+        if not votes:
+            return "Unknown"
+        recent = votes[-window:]
+        confident = [v for v in recent if v in ("Team A", "Team B", "Referee")]
+        if len(confident) >= 3:
+            top_team, top_cnt = Counter(confident).most_common(1)[0]
+            if (top_cnt / len(confident)) >= 0.55:
+                return top_team
+        return Counter(recent).most_common(1)[0][0]
 
     def _extract_torso_color(self, frame: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> Optional[np.ndarray]:
         """Extracts median BGR color from the upper torso of a player, masking out pitch grass."""
@@ -260,8 +416,14 @@ class ComputerVisionPipelineService:
 
         return np.median(non_grass, axis=0).astype(np.float32)
 
-    def _calibrate_team_clusters(self, cap: cv2.VideoCapture, total_frames: int, model) -> tuple[np.ndarray, np.ndarray, str, str]:
-        """Pre-samples frames across video to calibrate Team A and Team B jersey color clusters using K-Means, excluding referees and off-pitch spectators."""
+    def _calibrate_team_clusters(
+        self,
+        cap: cv2.VideoCapture,
+        total_frames: int,
+        model,
+        device: str = "cpu",
+    ) -> tuple[np.ndarray, np.ndarray, str, str, str]:
+        """Pre-samples frames across video to calibrate Team A and Team B jersey color clusters using K-Means, excluding referees and off-pitch personnel."""
         sample_indices = np.linspace(
             max(1, int(total_frames * 0.05)),
             max(1, int(total_frames * 0.95)),
@@ -270,6 +432,7 @@ class ComputerVisionPipelineService:
         )
         jersey_samples = []
         current_pos = cap.get(cv2.CAP_PROP_POS_FRAMES)
+        active_device = device
 
         for sf in sample_indices:
             cap.set(cv2.CAP_PROP_POS_FRAMES, sf)
@@ -277,9 +440,16 @@ class ComputerVisionPipelineService:
             if not ret or frame is None:
                 continue
 
-            pitch_hull = self._extract_pitch_hull(frame)
+            pitch_contour, pitch_area_ratio = self._extract_pitch_contour(frame)
 
-            res = model.predict(source=frame, classes=[self.PERSON_CLASS_ID], conf=0.35, verbose=False)[0]
+            res, active_device = self._predict_safe(
+                model,
+                frame,
+                classes=[self.PERSON_CLASS_ID],
+                conf=0.35,
+                imgsz=self.imgsz,
+                device=active_device,
+            )
             boxes = res.boxes
             if boxes is not None:
                 xyxy = boxes.xyxy.cpu().numpy().astype(int)
@@ -290,12 +460,9 @@ class ComputerVisionPipelineService:
                     if h <= 0 or (w / h) > 1.15 or h < 32:
                         continue
 
-                    # Filter out off-pitch detections (spectator stands / ad boards)
-                    feet = (float((x1 + x2) / 2), float(y2))
-                    if pitch_hull is not None:
-                        dist = cv2.pointPolygonTest(pitch_hull.astype(np.float32), feet, True)
-                        if dist < -45:
-                            continue
+                    # Strictly require on-pitch players (excludes stands, stewards, & sideline staff)
+                    if not self._is_on_pitch_person(frame, x1, y1, x2, y2, pitch_contour, pitch_area_ratio):
+                        continue
 
                     color = self._extract_torso_color(frame, x1, y1, x2, y2)
                     if color is not None:
@@ -327,13 +494,16 @@ class ComputerVisionPipelineService:
             c_b_rgb = c_team_b[::-1].astype(int)
             c_a_hex = f"#{c_a_rgb[0]:02x}{c_a_rgb[1]:02x}{c_a_rgb[2]:02x}"
             c_b_hex = f"#{c_b_rgb[0]:02x}{c_b_rgb[1]:02x}{c_b_rgb[2]:02x}"
-            logger.info(f"Calibrated Team Clusters (excluding referees & off-pitch): Team A RGB={c_a_rgb.tolist()}, Team B RGB={c_b_rgb.tolist()}")
-            return c_team_a, c_team_b, c_a_hex, c_b_hex
+            logger.info(
+                f"Calibrated Team Clusters (device={active_device}, imgsz={self.imgsz}, "
+                f"samples={len(jersey_samples)}): Team A RGB={c_a_rgb.tolist()}, Team B RGB={c_b_rgb.tolist()}"
+            )
+            return c_team_a, c_team_b, c_a_hex, c_b_hex, active_device
         else:
             logger.warning("Insufficient jersey samples for K-Means calibration; using defaults.")
             c0 = np.array([60, 50, 45], dtype=np.float32)
             c1 = np.array([200, 190, 180], dtype=np.float32)
-            return c0, c1, "#2D3748", "#E2E8F0"
+            return c0, c1, "#2D3748", "#E2E8F0", active_device
 
     def _classify_player_team(
         self,
@@ -450,24 +620,23 @@ class ComputerVisionPipelineService:
             )
 
             model = self._get_model()
+            active_device = self._resolve_inference_device()
+            logger.info(
+                f"Starting inference on video {video_id} with device={active_device}, imgsz={self.imgsz}"
+            )
 
             # Calibrate Team A and Team B jersey color clusters across sampled video frames
             self.job_manager.update_job(
                 video_id,
                 message="Calibrating Team A & Team B jersey color clusters via K-Means...",
             )
-            centroid_a, centroid_b, hex_team_a, hex_team_b = self._calibrate_team_clusters(cap, total_frames, model)
+            centroid_a, centroid_b, hex_team_a, hex_team_b, active_device = self._calibrate_team_clusters(
+                cap, total_frames, model, device=active_device
+            )
 
-            # Clean tracker state initialization before every video processing job
-            # Prevents track ID leakage and Kalman filter state carryover across videos
-            try:
-                from ultralytics.trackers.basetrack import BaseTrack
-                BaseTrack.reset_id()
-                if hasattr(model, "predictor") and model.predictor is not None:
-                    model.predictor.trackers = []
-                logger.info(f"Reset ByteTrack ID counter and predictor trackers for video job {video_id}")
-            except Exception as reset_err:
-                logger.warning(f"Could not reset ByteTrack state: {reset_err}")
+            # Create a fresh, isolated per-job BYTETracker instance (zero cross-video state leakage)
+            tracker = self._create_tracker()
+            logger.info(f"Initialized isolated BYTETracker for video job {video_id}")
 
             # Tracking statistics accumulation
             player_stats: Dict[int, Dict[str, Any]] = {}
@@ -479,8 +648,6 @@ class ComputerVisionPipelineService:
             inference_durations: List[float] = []
             prev_hist = None
             shot_cut_indices: List[int] = []
-
-            tracker_cfg = str(TRACKER_CONFIG_PATH) if TRACKER_CONFIG_PATH.exists() else "bytetrack.yaml"
 
             while True:
                 ret, frame = cap.read()
@@ -501,159 +668,171 @@ class ComputerVisionPipelineService:
                         shot_cut_indices.append(frame_idx)
                         logger.info(f"Camera shot cut detected at frame {frame_idx} (diff={diff:.3f})")
                         # Clear active & lost tracks so tracks don't cross cut boundaries
-                        try:
-                            if hasattr(model, "predictor") and model.predictor is not None:
-                                for trk in getattr(model.predictor, "trackers", []):
-                                    trk.tracked_stracks = []
-                                    trk.lost_stracks = []
-                                    trk.removed_stracks = []
-                        except Exception as trk_err:
-                            logger.debug(f"Could not clear tracker lists on shot cut: {trk_err}")
+                        tracker.tracked_stracks = []
+                        tracker.lost_stracks = []
+                        tracker.removed_stracks = []
                 prev_hist = curr_hist
 
-                # Extract playing field pitch hull
-                pitch_hull = self._extract_pitch_hull(frame)
+                # Extract tight playing-field grass contour (excludes neon broadcast logos & ad boards)
+                pitch_contour, pitch_area_ratio = self._extract_pitch_contour(frame)
+                is_wide_shot = pitch_contour is not None and pitch_area_ratio >= 0.25
 
-                # Run YOLO tracking with soccer-tuned ByteTrack
-                # conf=0.10 feeds low-confidence detections into ByteTrack stage-2 association for occluded players
-                results = model.track(
-                    source=frame,
-                    persist=True,
-                    tracker=tracker_cfg,
+                # Single-pass YOLO detection for BOTH persons (COCO 0) and football (COCO 32).
+                # Decoupling prediction from ByteTrack ensures:
+                #   1. Ball detections are NEVER silently suppressed by ByteTrack thresholds.
+                #   2. Off-pitch spectators/sideline staff NEVER enter ByteTrack or consume track IDs.
+                results, active_device = self._predict_safe(
+                    model,
+                    frame,
                     classes=[self.PERSON_CLASS_ID, self.BALL_CLASS_ID],
                     conf=0.10,
-                    device="cpu",
-                    verbose=False,
-                )[0]
+                    imgsz=self.imgsz,
+                    device=active_device,
+                )
 
                 frame_players_count = 0
                 frame_ball_detected = False
+                best_ball = None  # (conf, x1, y1, x2, y2)
 
                 boxes = results.boxes
                 if boxes is not None and len(boxes) > 0:
-                    xyxy = boxes.xyxy.cpu().numpy()
-                    classes = boxes.cls.cpu().numpy().astype(int)
-                    confs = boxes.conf.cpu().numpy()
-                    track_ids = (
-                        boxes.id.cpu().numpy().astype(int)
-                        if boxes.id is not None
-                        else None
-                    )
+                    boxes_np = boxes.cpu().numpy()
+                    xyxy_all = boxes_np.xyxy
+                    classes_all = boxes_np.cls.astype(int)
+                    confs_all = boxes_np.conf
 
-                    for i in range(len(boxes)):
-                        cls_id = classes[i]
-                        conf = float(confs[i])
-                        x1, y1, x2, y2 = map(int, xyxy[i])
-                        # Bound within frame boundaries
+                    valid_person_mask = np.zeros(len(boxes_np), dtype=bool)
+
+                    for i in range(len(boxes_np)):
+                        cls_id = int(classes_all[i])
+                        conf = float(confs_all[i])
+                        x1, y1, x2, y2 = map(int, xyxy_all[i])
                         x1, y1 = max(0, x1), max(0, y1)
                         x2, y2 = min(width - 1, x2), min(height - 1, y2)
                         box_w = x2 - x1
                         box_h = y2 - y1
-
-                        track_id = int(track_ids[i]) if track_ids is not None else None
+                        if box_w <= 0 or box_h <= 0:
+                            continue
 
                         if cls_id == self.PERSON_CLASS_ID:
-                            # Geometric heuristic filters for soccer broadcast video:
-                            # 1. Reject unnatural horizontal aspect ratios (ad banners, pitch text: w/h > 1.15)
-                            # 2. Reject microscopic noise boxes (< 24px height or < 180px area)
-                            if box_h <= 0 or (box_w / box_h) > 1.15 or box_h < 24 or (box_w * box_h) < 180:
+                            # 1. Geometric filters: reject ad banners (w/h > 1.15) and tiny noise (< 24px h)
+                            if (box_w / box_h) > 1.15 or box_h < 24 or (box_w * box_h) < 180:
                                 continue
-
-                            # 3. Spatial pitch-boundary filter:
-                            # Exclude detections located in spectator stands or behind ad boards
-                            feet = (float((x1 + x2) / 2), float(y2))
-                            if pitch_hull is not None:
-                                dist_to_pitch = cv2.pointPolygonTest(pitch_hull.astype(np.float32), feet, True)
-                                if dist_to_pitch < -45:
-                                    fy1 = max(0, y2 - 15)
-                                    fy2 = min(height, y2 + 15)
-                                    fx1 = max(0, int(feet[0]) - 15)
-                                    fx2 = min(width, int(feet[0]) + 15)
-                                    feet_patch = frame[fy1:fy2, fx1:fx2]
-                                    if feet_patch.size > 0:
-                                        fp_hsv = cv2.cvtColor(feet_patch, cv2.COLOR_BGR2HSV)
-                                        fp_grass = cv2.inRange(fp_hsv, (32, 35, 35), (85, 255, 255))
-                                        grass_pct = np.count_nonzero(fp_grass) / fp_grass.size
-                                        if grass_pct < 0.05:
-                                            # Spectator in the stands / ad board area: skip
-                                            continue
-
-                            frame_players_count += 1
-                            total_player_detections += 1
-
-                            # Extract upper torso jersey color and classify team
-                            torso_bgr = self._extract_torso_color(frame, x1, y1, x2, y2)
-                            team_label, box_color, label_bg, text_color, hex_col = self._classify_player_team(
-                                torso_bgr, centroid_a, centroid_b
-                            )
-
-                            label_text = (
-                                f"{team_label} #{track_id} ({conf:.2f})"
-                                if track_id is not None
-                                else f"{team_label} ({conf:.2f})"
-                            )
-
-                            # Draw player bounding box with team tactical color
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-
-                            # Draw tactical label pill with team background color
-                            self._draw_label_pill(
-                                frame,
-                                label_text,
-                                x1,
-                                y1,
-                                bg_color=label_bg,
-                                text_color=text_color,
-                            )
-
-                            # Accumulate per-player tracking data
-                            if track_id is not None:
-                                if track_id not in player_stats:
-                                    player_stats[track_id] = {
-                                        "track_id": track_id,
-                                        "label": f"Player #{track_id}",
-                                        "detections_count": 0,
-                                        "first_frame": frame_idx,
-                                        "last_frame": frame_idx,
-                                        "confidences": [],
-                                        "widths": [],
-                                        "heights": [],
-                                        "last_bbox": [x1, y1, x2, y2],
-                                        "team_votes": [],
-                                        "jersey_colors": [],
-                                    }
-                                stat = player_stats[track_id]
-                                stat["detections_count"] += 1
-                                stat["last_frame"] = frame_idx
-                                stat["confidences"].append(conf)
-                                stat["widths"].append(box_w)
-                                stat["heights"].append(box_h)
-                                stat["last_bbox"] = [x1, y1, x2, y2]
-                                stat["team_votes"].append(team_label)
-                                if torso_bgr is not None:
-                                    stat["jersey_colors"].append(torso_bgr)
+                            # 2. Strict actual-pitch contour filter (rejects stands, stewards, sideline staff)
+                            if not self._is_on_pitch_person(
+                                frame, x1, y1, x2, y2, pitch_contour, pitch_area_ratio
+                            ):
+                                continue
+                            valid_person_mask[i] = True
 
                         elif cls_id == self.BALL_CLASS_ID:
-                            # Ball heuristic filter: confidence >= 0.15, roughly circular/square aspect ratio,
-                            # and maximum dimension scaled for high-res broadcast video (<= 350px)
-                            if conf < 0.15 or box_w > 350 or box_h > 350 or box_h <= 0 or not (0.4 <= (box_w / box_h) <= 2.5):
-                                continue
+                            # Independent ball validation (never touches ByteTrack or player stats)
+                            aspect = box_w / box_h
+                            if is_wide_shot:
+                                # Strict wide-shot confidence, size & actual-pitch interior check
+                                # Rejects painted pitch dots (e.g. center spot at 0.15/12x8) and LED ad-board logos
+                                if conf < 0.22:
+                                    continue
+                                if not (10 <= box_w <= 60 and 10 <= box_h <= 60 and 0.65 <= aspect <= 1.55):
+                                    continue
+                                cx, cy = float((x1 + x2) / 2.0), float((y1 + y2) / 2.0)
+                                dist = cv2.pointPolygonTest(pitch_contour, (cx, cy), True)
+                                if dist < 15.0:
+                                    continue
+                            else:
+                                # Close-up / zoom shot allows lower conf & larger apparent football size
+                                if conf < 0.15:
+                                    continue
+                                if not (8 <= box_w <= 350 and 8 <= box_h <= 350 and 0.45 <= aspect <= 2.2):
+                                    continue
 
-                            frame_ball_detected = True
-                            total_ball_detections += 1
+                            if best_ball is None or conf > best_ball[0]:
+                                best_ball = (conf, x1, y1, x2, y2)
 
-                            label_text = f"Ball ({conf:.2f})"
+                    # Feed ONLY validated on-pitch person detections into ByteTrack
+                    person_boxes = boxes_np[valid_person_mask]
+                    tracks = tracker.update(person_boxes, frame)
+                else:
+                    # Advance tracker state cleanly on empty frames
+                    tracks = np.empty((0, 8), dtype=np.float32)
 
-                            # Draw ball circle / box
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), self.COLOR_BALL_BOX, 2)
-                            self._draw_label_pill(
-                                frame,
-                                label_text,
-                                x1,
-                                y1,
-                                bg_color=self.COLOR_BALL_BOX,
-                                text_color=self.COLOR_BALL_TEXT,
-                            )
+                # Process tracked on-pitch players
+                if tracks is not None and len(tracks) > 0:
+                    for row in tracks:
+                        x1, y1, x2, y2 = map(int, row[:4])
+                        track_id = int(row[4])
+                        conf = float(row[5])
+                        x1, y1 = max(0, x1), max(0, y1)
+                        x2, y2 = min(width - 1, x2), min(height - 1, y2)
+                        box_w = x2 - x1
+                        box_h = y2 - y1
+                        if box_w <= 0 or box_h <= 0:
+                            continue
+
+                        frame_players_count += 1
+                        total_player_detections += 1
+
+                        # Extract upper torso jersey color and classify team
+                        torso_bgr = self._extract_torso_color(frame, x1, y1, x2, y2)
+                        raw_team_label, _, _, _, _ = self._classify_player_team(
+                            torso_bgr, centroid_a, centroid_b
+                        )
+
+                        # Accumulate per-player tracking data first so overlay can use smoothed team label
+                        if track_id not in player_stats:
+                            player_stats[track_id] = {
+                                "track_id": track_id,
+                                "label": f"Player #{track_id}",
+                                "detections_count": 0,
+                                "first_frame": frame_idx,
+                                "last_frame": frame_idx,
+                                "confidences": [],
+                                "widths": [],
+                                "heights": [],
+                                "last_bbox": [x1, y1, x2, y2],
+                                "team_votes": [],
+                                "jersey_colors": [],
+                            }
+                        stat = player_stats[track_id]
+                        stat["detections_count"] += 1
+                        stat["last_frame"] = frame_idx
+                        stat["confidences"].append(conf)
+                        stat["widths"].append(box_w)
+                        stat["heights"].append(box_h)
+                        stat["last_bbox"] = [x1, y1, x2, y2]
+                        stat["team_votes"].append(raw_team_label)
+                        if torso_bgr is not None:
+                            stat["jersey_colors"].append(torso_bgr)
+
+                        # Smooth displayed team label over recent frames to suppress crossing flickers
+                        display_team = self._smooth_team_label(stat["team_votes"])
+                        box_color, label_bg, text_color, _ = self._team_style(display_team)
+                        label_text = f"{display_team} #{track_id} ({conf:.2f})"
+
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+                        self._draw_label_pill(
+                            frame,
+                            label_text,
+                            x1,
+                            y1,
+                            bg_color=label_bg,
+                            text_color=text_color,
+                        )
+
+                # Render validated on-pitch ball (at most one per frame, separate from player stats)
+                if best_ball is not None:
+                    b_conf, bx1, by1, bx2, by2 = best_ball
+                    frame_ball_detected = True
+                    total_ball_detections += 1
+                    cv2.rectangle(frame, (bx1, by1), (bx2, by2), self.COLOR_BALL_BOX, 2)
+                    self._draw_label_pill(
+                        frame,
+                        f"Ball ({b_conf:.2f})",
+                        bx1,
+                        by1,
+                        bg_color=self.COLOR_BALL_BOX,
+                        text_color=self.COLOR_BALL_TEXT,
+                    )
 
                 # Record timeline sample (every frame or sample rate)
                 timeline.append({
@@ -998,4 +1177,8 @@ class ComputerVisionPipelineService:
 
 
 # Global singleton instance of the production CV Pipeline
-cv_pipeline_service = ComputerVisionPipelineService(model_weights=settings.YOLO_MODEL_PATH)
+cv_pipeline_service = ComputerVisionPipelineService(
+    model_weights=settings.YOLO_MODEL_PATH,
+    imgsz=settings.YOLO_IMGSZ,
+    device=settings.YOLO_DEVICE,
+)

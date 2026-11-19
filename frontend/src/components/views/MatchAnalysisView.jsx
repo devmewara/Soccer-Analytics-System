@@ -318,24 +318,27 @@ export const MatchAnalysisView = ({
       {/* Real Computer Vision Summary Cards (Visible when real analytics is present) */}
       {hasRealAnalytics && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Confirmed Players</span>
+          <div
+            className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl"
+            title="Sustained ByteTrack tracklets across the clip (not equal to simultaneous physical players)"
+          >
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Confirmed Track IDs</span>
             <p className="text-xl font-bold text-emerald-400 font-mono mt-1">
               {realAnalytics.summary_metrics.confirmed_players_count || realAnalytics.summary_metrics.unique_players_count}
               <span className="text-[10px] text-slate-500 font-normal ml-1">
-                ({realAnalytics.summary_metrics.total_unique_track_ids || realAnalytics.summary_metrics.unique_players_count} IDs)
+                ({realAnalytics.summary_metrics.total_unique_track_ids || realAnalytics.summary_metrics.unique_players_count} total)
               </span>
             </p>
           </div>
 
           <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Team Breakdown</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Team Track IDs</span>
             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-              <span className="text-xs font-mono font-bold text-sky-400">
+              <span className="text-xs font-mono font-bold text-sky-400" title="Confirmed Team A Track IDs">
                 T-A: {realAnalytics.summary_metrics.team_a_count || 0}
               </span>
               <span className="text-slate-600">•</span>
-              <span className="text-xs font-mono font-bold text-rose-400">
+              <span className="text-xs font-mono font-bold text-rose-400" title="Confirmed Team B Track IDs">
                 T-B: {realAnalytics.summary_metrics.team_b_count || 0}
               </span>
               {realAnalytics.summary_metrics.officials_count > 0 && (
@@ -367,12 +370,15 @@ export const MatchAnalysisView = ({
             </p>
           </div>
 
-          <div className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl">
-            <span className="text-[10px] font-mono text-slate-400 uppercase block">Player Detections</span>
+          <div
+            className="p-3.5 bg-[#101722] border border-[#253244] rounded-xl"
+            title="Simultaneous on-pitch detections averaged per frame (with total frame detections)"
+          >
+            <span className="text-[10px] font-mono text-slate-400 uppercase block">Avg Visible / Frame</span>
             <p className="text-xl font-bold text-white font-mono mt-1">
-              {realAnalytics.summary_metrics.total_player_detections || 0}
+              {realAnalytics.summary_metrics.avg_players_per_frame}
               <span className="text-[10px] text-slate-500 font-normal ml-1">
-                ({realAnalytics.summary_metrics.avg_players_per_frame}/f)
+                ({realAnalytics.summary_metrics.total_player_detections || 0} dets)
               </span>
             </p>
           </div>
@@ -826,10 +832,10 @@ export const MatchAnalysisView = ({
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                Team A: {realAnalytics.summary_metrics.team_a_count || 0}
+                Confirmed Team A Track IDs: {realAnalytics.summary_metrics.team_a_count || 0}
               </span>
               <span className="text-xs font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                Team B: {realAnalytics.summary_metrics.team_b_count || 0}
+                Confirmed Team B Track IDs: {realAnalytics.summary_metrics.team_b_count || 0}
               </span>
               {realAnalytics.summary_metrics.officials_count > 0 && (
                 <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -842,7 +848,7 @@ export const MatchAnalysisView = ({
                 </span>
               )}
               <span className="text-xs font-mono text-emerald-400 font-bold ml-1">
-                {realAnalytics.players.length} Confirmed Players
+                {realAnalytics.players.length} Confirmed Track IDs
               </span>
             </div>
           </div>

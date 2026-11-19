@@ -60,19 +60,19 @@ export const TeamAnalyticsView = ({ data, realAnalytics, isUserUploaded = false 
 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/25">
-              Team A: <strong>{teamAPlayers.length}</strong>
+              Confirmed Team A Track IDs: <strong>{teamAPlayers.length}</strong>
             </span>
             <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/25">
-              Team B: <strong>{teamBPlayers.length}</strong>
+              Confirmed Team B Track IDs: <strong>{teamBPlayers.length}</strong>
             </span>
             {referees.length > 0 && (
               <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/25">
-                Referees: <strong>{referees.length}</strong>
+                Referee Track IDs: <strong>{referees.length}</strong>
               </span>
             )}
             {unknownPlayers.length > 0 && (
               <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-500/10 text-slate-300 border border-slate-500/25">
-                Unknown: <strong>{unknownPlayers.length}</strong>
+                Unknown IDs: <strong>{unknownPlayers.length}</strong>
               </span>
             )}
           </div>
@@ -96,7 +96,7 @@ export const TeamAnalyticsView = ({ data, realAnalytics, isUserUploaded = false 
                 </div>
               </div>
               <span className="text-xs font-mono font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 px-2.5 py-1 rounded-lg">
-                {teamAPlayers.length} Confirmed Players
+                {teamAPlayers.length} Confirmed Team A Track IDs
               </span>
             </div>
 
@@ -147,7 +147,7 @@ export const TeamAnalyticsView = ({ data, realAnalytics, isUserUploaded = false 
                 </div>
               </div>
               <span className="text-xs font-mono font-bold text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2.5 py-1 rounded-lg">
-                {teamBPlayers.length} Confirmed Players
+                {teamBPlayers.length} Confirmed Team B Track IDs
               </span>
             </div>
 

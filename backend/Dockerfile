@@ -32,7 +32,7 @@ COPY app ./app
 RUN mkdir -p /app/uploads /app/models
 
 # Pre-download YOLO11n weights during build so container startup is fast and deterministic
-RUN python -c "from ultralytics import YOLO; YOLO('/app/models/yolo11n.pt')"
+RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')" && mv yolo11n.pt /app/models/yolo11n.pt
 
 EXPOSE 8000
 

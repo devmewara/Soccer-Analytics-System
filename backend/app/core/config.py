@@ -31,6 +31,8 @@ class Settings:
     
     # Computer vision model settings
     YOLO_MODEL_PATH: str = os.getenv("YOLO_MODEL_PATH", "yolo11n.pt")
+    YOLO_IMGSZ: int = int(os.getenv("YOLO_IMGSZ", "1280"))
+    YOLO_DEVICE: str = os.getenv("YOLO_DEVICE", "auto")
     
     # Upload settings
     UPLOAD_DIR: Path = BASE_DIR / os.getenv("UPLOAD_DIR", "uploads")

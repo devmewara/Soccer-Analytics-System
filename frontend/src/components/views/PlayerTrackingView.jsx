@@ -145,18 +145,18 @@ export const PlayerTrackingView = ({
 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/25">
-              Team A: {realAnalytics?.summary_metrics?.team_a_count || 0}
+              Team A Track IDs: {realAnalytics?.summary_metrics?.team_a_count || 0}
             </span>
             <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/25">
-              Team B: {realAnalytics?.summary_metrics?.team_b_count || 0}
+              Team B Track IDs: {realAnalytics?.summary_metrics?.team_b_count || 0}
             </span>
             {(realAnalytics?.summary_metrics?.officials_count || 0) > 0 && (
               <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/25">
-                Referees: {realAnalytics?.summary_metrics?.officials_count}
+                Ref IDs: {realAnalytics?.summary_metrics?.officials_count}
               </span>
             )}
             <span className="text-xs font-mono text-emerald-400 bg-[#101722] px-3 py-1 rounded-xl border border-[#253244]">
-              Confirmed: <strong>{realPlayers.length}</strong>
+              Confirmed Track IDs: <strong>{realPlayers.length}</strong>
             </span>
           </div>
         </div>
@@ -176,7 +176,7 @@ export const PlayerTrackingView = ({
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Confirmed ({realPlayers.length})
+                  Confirmed IDs ({realPlayers.length})
                 </button>
                 <button
                   onClick={() => setShowTransient(true)}

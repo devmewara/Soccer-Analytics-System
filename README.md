@@ -6,29 +6,47 @@ Designed for football broadcast video ingestion, deep-learning player and ball d
 
 ---
 
-## Implemented Capabilities
+## Key Features & Capabilities
 
-1. **Object Detection (`Ultralytics YOLO11n`)**:
-   - Detects **Players & Officials (COCO Class 0)** and **Sports Ball (COCO Class 32)**.
-   - Filters false positives with aspect-ratio, minimum-size, and ball-geometry heuristics.
-2. **Pitch-Region Filtering (`OpenCV`)**:
-   - Segments green pitch grass in HSV space, computes a morphologically closed convex pitch hull, and excludes off-pitch spectator / advertising-board detections before tracking and team clustering.
+1. **High-Resolution Object Detection (`Ultralytics YOLO11n`)**:
+   - Detects **Players & Match Officials (COCO Class 0)** and **Sports Ball (COCO Class 32)** at `imgsz=1280` single-pass inference.
+   - Automatically utilizes Apple Silicon **MPS** (Metal Performance Shaders) on macOS M1/M2/M3 for 2.7x faster inference (~12–19 FPS), with automatic fallback to NVIDIA CUDA or CPU.
+   - Strict wide-shot ball filtering eliminates false positives from ad boards and white pitch markers.
+
+2. **Tight Pitch-Region Filtering (`OpenCV`)**:
+   - Segments green grass in HSV color space (`(32, 35, 35)` to `(85, 215, 220)`), applies morphological opening and closing, and computes a tight polygonal grass contour.
+   - Rejects off-pitch spectators, coaching staff, and advertising hoardings by validating player ground-contact points (`x_mid, y_bottom`) inside the active pitch contour.
+
 3. **Multi-Object Tracking & Camera-Cut Handling (`ByteTrack`)**:
-   - Soccer-tuned ByteTrack configuration ([backend/app/core/soccer_bytetrack.yaml](backend/app/core/soccer_bytetrack.yaml)) maintains track continuity across brief occlusions (`track_buffer: 90`).
-   - Detects broadcast camera cuts via HSV histogram Bhattacharyya distance and clears active/lost tracker buffers across shot cuts to prevent cross-shot ID leakage.
-   - Resets tracker state cleanly before every video job and isolates short-lived transient tracklets (`< 25` frames) from confirmed tracks.
+   - Soccer-tuned ByteTrack configuration ([backend/app/core/soccer_bytetrack.yaml](backend/app/core/soccer_bytetrack.yaml)) maintains track persistence across sprints and occlusions (`track_buffer: 90`, `match_thresh: 0.85`).
+   - Detects broadcast camera cuts via HSV histogram Bhattacharyya distance (`threshold: 0.55`) and clears active/lost tracker state across shot cuts to prevent cross-shot tracklet hopping.
+   - Fresh per-job `BYTETracker` instance prevents tracker state leakage between jobs.
+   - Isolates transient tracklets (`< 25` frames) from confirmed players.
+
 4. **Jersey-Colour Team Classification (`OpenCV K-Means`)**:
    - Extracts upper-torso pixels (`18%–50%` height, `18%–82%` width) with green-grass HSV masking.
-   - Calibrates two team kit centroids via K-Means (excluding referees and off-pitch detections).
-   - Classifies tracks into **Team A**, **Team B**, **Referee**, or **Unknown** (ambiguous detections are labeled `Unknown` rather than forced into a team).
+   - Calibrates team kit centroids via K-Means (excluding referees and off-pitch detections).
+   - Classifies tracks into **Team A**, **Team B**, **Referee**, or **Unknown** with temporal sliding-window smoothing (`15` frames) to eliminate single-frame classification flicker.
+
 5. **Annotated Video Generation & Fullscreen Playback**:
    - Renders team-colored bounding boxes, track IDs, confidence scores, ball markers, and a top-left telemetry HUD directly onto the output video.
-   - Transcodes annotated output to browser-native H.264 MP4 when `ffmpeg` is available (built into the production Docker image).
+   - Produces browser-native H.264 MP4 (`avc1`) playable in Safari, Chrome, and Edge, with HTTP 206 Partial Content byte-range seeking supported.
    - Supports side-by-side Annotated AI vs. Raw toggling and native Fullscreen playback.
+
 6. **Scientific Integrity**:
    - Distinguishes directly measured telemetry (frames, detections/frame, track durations, camera shots, ball sightings) from derived estimates (K-Means team clusters).
+   - Clearly labels "Confirmed Track IDs" alongside directly measured "Average Visible Players / Frame" to transparently reflect 2D tracking across camera cuts.
    - Physical speed (`km/h`) and metric pitch distance (`m`) require 4-point homography calibration and are intentionally not fabricated for uploaded footage.
    - Sample Demo Sandbox data is explicitly isolated and labeled as demo data.
+
+---
+
+## Technology Stack
+
+- **Backend**: Python 3.11 / 3.13, FastAPI, Uvicorn, Pydantic v2
+- **Computer Vision**: Ultralytics YOLO11n, ByteTrack, OpenCV (`opencv-python-headless`), NumPy, SciPy, Lapx
+- **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Chart.js, react-chartjs-2, Axios
+- **Deployment**: Docker, Vercel (Frontend), Render / Railway (Backend)
 
 ---
 
@@ -39,22 +57,26 @@ Soccer-Analytics-System/
 ├── backend/
 │   ├── Dockerfile               # Production Docker image (Python 3.11 + CPU PyTorch + ffmpeg + pre-cached YOLO11n)
 │   ├── .dockerignore
-│   ├── .env.example
-│   ├── requirements.txt
+│   ├── .env.example             # Backend environment template
+│   ├── requirements.txt         # Python dependencies
+│   ├── test_e2e_api.py          # Automated End-to-End API integration test suite
+│   ├── test_tracking_quality.py # Continuity, ball detection & video validation audit
+│   ├── test_repeatability.py    # Determinism & ID leak repeatability test
+│   ├── yolo11n.pt               # Pre-downloaded YOLO11n model weights
 │   ├── app/
 │   │   ├── main.py              # FastAPI app, CORS, static /uploads mount
 │   │   ├── core/
-│   │   │   ├── config.py        # Environment-driven settings (CORS, CORS regex, upload limits, model path)
-│   │   │   └── soccer_bytetrack.yaml
-│   │   ├── schemas/             # Pydantic response models (health, video, analytics)
+│   │   │   ├── config.py        # Settings (CORS regex, resolution, device, upload limits)
+│   │   │   └── soccer_bytetrack.yaml # High-resolution soccer tracker tuning
+│   │   ├── schemas/             # Pydantic models (health, video, analytics)
 │   │   ├── services/
-│   │   │   └── cv_pipeline.py   # YOLO11 + ByteTrack + Pitch Filter + Camera Cut + K-Means Team Classifier
+│   │   │   └── cv_pipeline.py   # YOLO11 + ByteTrack + Pitch Filter + Team Classifier
 │   │   └── api/
 │   │       ├── router.py
 │   │       └── endpoints/
 │   │           ├── health.py    # GET /api/health
-│   │           ├── video.py     # POST upload, POST {id}/analyze, GET status/{id}, GET recent
-│   │           └── analytics.py # GET {video_id} (real CV metrics), GET overview (demo)
+│   │           ├── video.py     # POST upload, POST analyze, GET status, GET recent
+│   │           └── analytics.py # GET {video_id} (real CV), GET overview (demo)
 │   └── uploads/                 # Raw & annotated match videos (gitignored except .gitkeep)
 │
 ├── frontend/
@@ -81,87 +103,92 @@ Soccer-Analytics-System/
 
 ---
 
-## Local Development Setup
+## Local Development Setup (macOS / Apple Silicon M1/M2/M3)
 
 ### Prerequisites
-- **Python**: 3.10+ (tested on 3.11 and 3.13)
+- **Python**: 3.10+ (tested on Python 3.11 and 3.13)
 - **Node.js**: 18+ and **npm** 9+
+- **macOS M1/M2/M3**: Metal (MPS) is enabled automatically by `YOLO_DEVICE=auto`.
 
 ### 1. Start the Backend (FastAPI)
 
 ```bash
+# Navigate to backend directory
 cd backend
+
+# Create and activate Python virtual environment
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Start FastAPI development server
 uvicorn app.main:app --reload --port 8000
 ```
 
-- API Root: `http://localhost:8000`
-- Swagger Docs: `http://localhost:8000/docs`
-- Health Check: `http://localhost:8000/api/health`
+- **Backend API Root**: `http://localhost:8000`
+- **Interactive Swagger Docs**: `http://localhost:8000/docs`
+- **ReDoc Documentation**: `http://localhost:8000/redoc`
+- **Health Check Endpoint**: `http://localhost:8000/api/health`
 
 ### 2. Start the Frontend (React + Vite)
 
+In a separate terminal window:
+
 ```bash
+# Navigate to frontend directory
 cd frontend
+
+# Install npm dependencies
 npm install
+
+# Start Vite local development server
 npm run dev
 ```
 
-- Dashboard: `http://localhost:5173`
+- **Frontend Application Dashboard**: `http://localhost:5173`
 
 ---
 
-## Cloud Deployment Guide (Vercel + Render / Railway)
+## How to Upload and Analyze a Match Video
 
-Because the backend executes real PyTorch + Ultralytics YOLO11 + OpenCV video inference, the recommended production architecture decouples the static frontend from a containerized Python backend:
+1. Open `http://localhost:5173` in your browser.
+2. In the **Match Video Ingestion** card on the home screen, click **Select Match Video** or drag and drop a `.mp4` or `.mov` clip (e.g. broadcast footage).
+3. Click **Upload & Open Workspace**.
+4. In the Analysis Workspace control banner, click **Start AI Video Analysis**.
+5. The progress bar tracks real-time frame processing, current inference FPS, and status.
+6. Once complete:
+   - **Video Analysis Tab**: Watch the annotated H.264 stream with bounding boxes, player track IDs, team colors, ball marker, and telemetry HUD. Click **Annotated AI / Raw** to compare footage. Click **Fullscreen** for presentation display.
+   - **Player Tracking Tab**: Inspect confirmed tracking IDs, detection counts, lifespan durations, and bounding coordinates. Toggle **Transient Tracks** to inspect filtered short-lived detections.
+   - **Team Analytics Tab**: View the head-to-head squad breakdown, K-Means kit color clustering, and match officials count.
+   - **Heatmaps Tab**: Inspect spatial pitch occupancy KDE preview (modeled pending homography).
+   - **Demo Sandbox**: Click **Preview in Demo Sandbox** at any time to inspect simulated full 90-minute telemetry without uploading footage.
 
-- **Frontend**: **Vercel** (Global CDN, free tier, instant Vite builds)
-- **Backend**: **Render (Docker Web Service)** or **Railway (Docker Service)** — runs independently of your local machine
+---
 
-### Resource & Storage Considerations
-- **RAM**: PyTorch + YOLO11n + OpenCV video processing uses **~1.0–1.5 GB RAM** during active video analysis. **Render Free (512 MB RAM) will run out of memory** during inference. Use **Render Standard (2 GB RAM)** or **Railway Hobby/Pro (up to 8 GB RAM)**.
-- **Single Worker**: `backend/Dockerfile` intentionally runs `uvicorn ... --workers 1` so in-memory job progress (`VideoJobManager`) stays consistent and PyTorch memory is not duplicated across workers.
-- **Model Weights**: `backend/Dockerfile` pre-downloads `yolo11n.pt` into `/app/models/yolo11n.pt` at image build time using CPU-only PyTorch wheels, avoiding multi-GB CUDA downloads and cold-start weight fetches.
-- **Browser Video Codec**: `backend/Dockerfile` installs `ffmpeg`. After OpenCV finishes rendering, the pipeline automatically transcodes output videos to browser-compatible H.264 MP4 (`libx264`, `yuv420p`, `+faststart`).
-- **Storage**: Cloud container filesystems are ephemeral by default (uploaded/annotated clips clear on redeploy/restart). For persistent clips on Render, uncomment the `disk` block in [render.yaml](render.yaml) (mounts a persistent disk at `/app/uploads`).
+## Running Automated Verification Tests
 
-### Step 1: Push Repository to GitHub
-Create a new GitHub repository (if not already created) and push the `main` branch. `.gitignore` already excludes `venv/`, `node_modules/`, `backend/uploads/*`, `.env*`, and `*.pt` model weights.
+### 1. Backend End-to-End API Test Suite
+Validates health check, demo overview, recent video listings, real analytics payload structure, job status, video streaming with HTTP 206 byte-range seeking, and synthetic video upload:
 
 ```bash
-git remote add origin https://github.com/<your-username>/Soccer-Analytics-System.git
-git push -u origin main
+PYTHONPATH=backend backend/venv/bin/python backend/test_e2e_api.py
 ```
 
-### Step 2: Deploy the Backend on Render (Docker)
-Option A — **Using Blueprint (`render.yaml`)**:
-1. Go to [dashboard.render.com](https://dashboard.render.com) → **New +** → **Blueprint**.
-2. Connect your GitHub repository. Render reads [render.yaml](render.yaml) automatically.
-3. Confirm plan (**Standard**, 2 GB RAM recommended for YOLO inference) and click **Apply**.
+### 2. Computer Vision Tracking Quality Audit
+Examines track continuity density, beginning/middle/end representative frames, ball detection independence, and annotated video playable stream verification:
 
-Option B — **Manual Web Service on Render** (or **Railway**):
-1. Create a new **Web Service** from your GitHub repo.
-2. Set **Root Directory** to `backend` and **Runtime** to **Docker** (uses `backend/Dockerfile`).
-3. Set Health Check Path to `/api/health`.
-4. Configure Environment Variables:
-   - `DEBUG=False`
-   - `YOLO_MODEL_PATH=/app/models/yolo11n.pt`
-   - `UPLOAD_DIR=uploads`
-   - `MAX_UPLOAD_SIZE_MB=200`
-   - `CORS_ORIGINS=https://<your-vercel-domain>.vercel.app,http://localhost:5173`
-   - `CORS_ORIGIN_REGEX=https://.*\.vercel\.app`
-5. Wait for the Docker build to finish and verify `GET https://<your-backend-domain>/api/health` returns `"status": "healthy"`.
+```bash
+backend/venv/bin/python backend/test_tracking_quality.py
+```
 
-### Step 3: Deploy the Frontend on Vercel
-1. Go to [vercel.com/new](https://vercel.com/new) and import your GitHub repository.
-2. Set **Root Directory** to `frontend` (Vercel automatically detects Vite and reads `frontend/vercel.json`).
-3. Add Environment Variable:
-   - `VITE_API_URL=https://<your-backend-domain>/api`
-   - *(Optional)* `VITE_SERVER_URL=https://<your-backend-domain>` (automatically derived from `VITE_API_URL` if omitted)
-4. Click **Deploy**.
-5. Copy your final Vercel URL (e.g. `https://pitchvision-ai.vercel.app`) and update `CORS_ORIGINS` on Render/Railway if you are not using `CORS_ORIGIN_REGEX`.
+### 3. Frontend Production Build
+Verifies that the React + Vite application compiles cleanly with zero bundle errors:
+
+```bash
+cd frontend && npm run build
+```
 
 ---
 
@@ -177,4 +204,62 @@ Option B — **Manual Web Service on Render** (or **Railway**):
 | `GET` | `/api/video/recent` | List uploaded videos and processing status |
 | `GET` | `/api/analytics/{video_id}` | Verified computed CV analytics JSON (confirmed tracks, transient tracks, teams, timeline) |
 | `GET` | `/api/analytics/overview` | Explicitly labeled sample dataset for Demo Sandbox |
-| `GET` | `/uploads/{filename}` | Static video stream for raw and annotated match clips |
+| `GET` | `/uploads/{filename}` | Static video stream for raw and annotated match clips (HTTP 206 range support) |
+
+---
+
+## Known Limitations & Scientific Honesty
+
+1. **Camera Cuts & 2D Tracklet Counts**:
+   In broadcast soccer footage, television director cuts switch between wide camera views, close-ups, and replays. Without metric 3D facial/jersey re-identification, a 2D tracker treats players re-entering a new camera shot as new track IDs. PitchVision AI handles this transparently:
+   - Detects camera cuts and clears tracking buffers across cuts to prevent ID hopping.
+   - Reports both **Confirmed Track IDs** (cumulative persistent tracklets) and directly measured **Average Visible Players / Frame** (simultaneous headcount, e.g. ~21.3 on full pitch views).
+2. **Speed & Physical Distance (Homography Calibration)**:
+   Estimating physical speed (`km/h`) and metric distance (`meters`) requires establishing a 4-point homography matrix mapping 2D video pixel coordinates onto standard 105m × 68m FIFA pitch coordinates. PitchVision AI does **not** fabricate speeds or distances for uploaded footage; these are marked as *Pending Calibration*.
+3. **Single-Worker Process Model**:
+   The backend uses `uvicorn --workers 1` to ensure thread-safe in-memory job coordination (`VideoJobManager`) and prevent multi-process PyTorch memory replication.
+4. **Cloud Ephemeral Storage**:
+   Cloud container platforms (Render, Railway) use ephemeral container filesystems by default. Videos stored in `backend/uploads/` will reset on container restart unless a persistent volume disk is attached.
+
+---
+
+## Cloud Deployment Guide (Vercel + Render / Railway)
+
+Because the backend executes real PyTorch + Ultralytics YOLO11 + OpenCV video inference, the production architecture decouples the static frontend from a containerized Python backend:
+
+- **Frontend**: **Vercel** (Global CDN, free Hobby tier, instant Vite builds)
+- **Backend**: **Render (Docker Web Service)** or **Railway (Docker Service)**
+
+### Resource & Storage Requirements
+- **RAM**: PyTorch + YOLO11n + OpenCV video processing uses **~1.1–1.5 GB RAM** during active video analysis at `imgsz=1280`. **Render Free (512 MB RAM) will trigger OOM kills**. A minimum of **2 GB RAM** (Render Standard or Railway Hobby/Pro) is required.
+- **Model Weights**: `backend/Dockerfile` pre-downloads `yolo11n.pt` into `/app/models/yolo11n.pt` during image build time using CPU-only PyTorch wheels.
+- **Browser Video Codec**: `backend/Dockerfile` installs `ffmpeg`. After OpenCV finishes rendering, the pipeline automatically transcodes output videos to browser-compatible H.264 MP4 (`libx264`, `yuv420p`, `+faststart`).
+- **Storage**: For persistent clips on Render, uncomment the `disk` block in [render.yaml](render.yaml) (mounts a persistent disk at `/app/uploads`).
+
+### Step 1: Push Repository to GitHub
+```bash
+git remote add origin https://github.com/<your-username>/Soccer-Analytics-System.git
+git push -u origin main
+```
+
+### Step 2: Deploy Backend on Render (Docker)
+1. Go to [dashboard.render.com](https://dashboard.render.com) → **New +** → **Blueprint** (or Web Service).
+2. Connect your GitHub repository.
+3. Select **Render Standard (2 GB RAM)** plan.
+4. Configure Environment Variables:
+   - `DEBUG=False`
+   - `YOLO_MODEL_PATH=/app/models/yolo11n.pt`
+   - `YOLO_IMGSZ=1280`
+   - `YOLO_DEVICE=auto`
+   - `UPLOAD_DIR=uploads`
+   - `MAX_UPLOAD_SIZE_MB=500`
+   - `CORS_ORIGINS=https://<your-vercel-domain>.vercel.app,http://localhost:5173`
+   - `CORS_ORIGIN_REGEX=https://.*\.vercel\.app`
+
+### Step 3: Deploy Frontend on Vercel
+1. Go to [vercel.com/new](https://vercel.com/new) and import your GitHub repository.
+2. Set **Root Directory** to `frontend`.
+3. Add Environment Variable:
+   - `VITE_API_URL=https://<your-backend-domain>/api`
+   - *(Optional)* `VITE_SERVER_URL=https://<your-backend-domain>`
+4. Click **Deploy**.
