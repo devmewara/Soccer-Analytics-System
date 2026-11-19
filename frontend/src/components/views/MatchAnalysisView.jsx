@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Play,
   Pause,
@@ -26,6 +26,11 @@ import DemoBanner from '../common/DemoBanner';
 import DemoBadge from '../common/DemoBadge';
 import PitchCanvas from '../common/PitchCanvas';
 import CameraRelativeMiniMap from '../common/CameraRelativeMiniMap';
+import VideoSpeedOverlay from '../common/VideoSpeedOverlay';
+import BallTrajectoryVideoOverlay from '../common/BallTrajectoryVideoOverlay';
+import BallTrajectoryAnalysisPanel from '../common/BallTrajectoryAnalysisPanel';
+import { calculatePlayerSpeeds } from '../../utils/speedEstimator';
+import { calculateBallTrajectory } from '../../utils/ballTrajectoryEstimator';
 import { api, SERVER_BASE_URL } from '../../api/client';
 
 /**
@@ -90,6 +95,9 @@ export const MatchAnalysisView = ({
   // Toggle between Annotated AI Video and Raw Video
   const [showAnnotated, setShowAnnotated] = useState(true);
 
+  // Live video player speed labels overlay toggle (defaults to ON)
+  const [showSpeedOverlay, setShowSpeedOverlay] = useState(true);
+
   // Overlay visibility toggles for DEMO mode
   const [showBoundingBoxes, setShowBoundingBoxes] = useState(true);
   const [showPitchCalibration, setShowPitchCalibration] = useState(true);
@@ -98,7 +106,44 @@ export const MatchAnalysisView = ({
 
   const videoRef = useRef(null);
   const playerContainerRef = useRef(null);
+  const miniMapContainerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isMiniMapFullscreen, setIsMiniMapFullscreen] = useState(false);
+  const [showFullscreenControls, setShowFullscreenControls] = useState(true);
+  const controlsTimeoutRef = useRef(null);
+
+  // Auto-hide controls in fullscreen after inactivity while playing
+  const resetControlsTimer = useCallback(() => {
+    setShowFullscreenControls(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+    // Only schedule fade-out if playing in fullscreen
+    if (isPlaying && isFullscreen) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowFullscreenControls(false);
+      }, 3500);
+    }
+  }, [isPlaying, isFullscreen]);
+
+  // Keep controls visible when paused or when fullscreen state changes
+  useEffect(() => {
+    if (!isPlaying || !isFullscreen) {
+      setShowFullscreenControls(true);
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = null;
+      }
+    } else {
+      resetControlsTimer();
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [isPlaying, isFullscreen, resetControlsTimer]);
 
   // Helper to query active fullscreen element across browser implementations
   const getFullscreenElement = () => {
@@ -140,7 +185,7 @@ export const MatchAnalysisView = ({
     }
   };
 
-  // Handler for toggling fullscreen mode
+  // Handler for toggling video fullscreen mode
   const handleToggleFullscreen = async () => {
     try {
       if (isFullscreen) {
@@ -149,18 +194,27 @@ export const MatchAnalysisView = ({
         } else {
           setIsFullscreen(false);
         }
-      } else if (playerContainerRef.current) {
-        const el = playerContainerRef.current;
-        if (
-          el.requestFullscreen ||
-          el.webkitRequestFullscreen ||
-          el.mozRequestFullScreen ||
-          el.msRequestFullscreen
-        ) {
-          try {
-            await enterFullscreen(el);
-          } catch (err) {
-            console.warn('Native fullscreen request rejected, using viewport fallback:', err);
+      } else {
+        // Exit mini-map fullscreen first if active
+        if (isMiniMapFullscreen) {
+          if (getFullscreenElement()) await exitFullscreen();
+          setIsMiniMapFullscreen(false);
+        }
+        if (playerContainerRef.current) {
+          const el = playerContainerRef.current;
+          if (
+            el.requestFullscreen ||
+            el.webkitRequestFullscreen ||
+            el.mozRequestFullScreen ||
+            el.msRequestFullscreen
+          ) {
+            try {
+              await enterFullscreen(el);
+            } catch (err) {
+              console.warn('Native fullscreen request rejected, using viewport fallback:', err);
+              setIsFullscreen(true);
+            }
+          } else {
             setIsFullscreen(true);
           }
         } else {
@@ -172,22 +226,89 @@ export const MatchAnalysisView = ({
     }
   };
 
+  // Handler for toggling tactical mini-map fullscreen mode
+  const handleToggleMiniMapFullscreen = async () => {
+    try {
+      if (isMiniMapFullscreen) {
+        if (getFullscreenElement()) {
+          await exitFullscreen();
+        } else {
+          setIsMiniMapFullscreen(false);
+        }
+      } else {
+        // Exit video fullscreen first if active
+        if (isFullscreen) {
+          if (getFullscreenElement()) await exitFullscreen();
+          setIsFullscreen(false);
+        }
+        if (miniMapContainerRef.current) {
+          const el = miniMapContainerRef.current;
+          if (
+            el.requestFullscreen ||
+            el.webkitRequestFullscreen ||
+            el.mozRequestFullScreen ||
+            el.msRequestFullscreen
+          ) {
+            try {
+              await enterFullscreen(el);
+            } catch (err) {
+              console.warn('Native mini-map fullscreen request rejected, using viewport fallback:', err);
+              setIsMiniMapFullscreen(true);
+            }
+          } else {
+            setIsMiniMapFullscreen(true);
+          }
+        } else {
+          setIsMiniMapFullscreen(true);
+        }
+      }
+    } catch (err) {
+      console.warn('Mini-map fullscreen toggle error:', err);
+    }
+  };
+
   // Synchronize fullscreen state with browser events and listen for Escape key
   useEffect(() => {
     const handleFullscreenChange = () => {
       const currentFullscreenElem = getFullscreenElement();
-      const isNowFullscreen = Boolean(
+      const isNowVideoFullscreen = Boolean(
         currentFullscreenElem &&
           playerContainerRef.current &&
           (currentFullscreenElem === playerContainerRef.current ||
             playerContainerRef.current.contains(currentFullscreenElem))
       );
-      setIsFullscreen(isNowFullscreen);
+      const isNowMiniMapFullscreen = Boolean(
+        currentFullscreenElem &&
+          miniMapContainerRef.current &&
+          (currentFullscreenElem === miniMapContainerRef.current ||
+            miniMapContainerRef.current.contains(currentFullscreenElem))
+      );
+      setIsFullscreen(isNowVideoFullscreen);
+      setIsMiniMapFullscreen(isNowMiniMapFullscreen);
     };
 
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isFullscreen && !getFullscreenElement()) {
-        setIsFullscreen(false);
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (isFullscreen && !getFullscreenElement()) {
+          setIsFullscreen(false);
+        }
+        if (isMiniMapFullscreen && !getFullscreenElement()) {
+          setIsMiniMapFullscreen(false);
+        }
+      } else if (isMiniMapFullscreen) {
+        if (e.key === ' ' || e.code === 'Space') {
+          e.preventDefault();
+          handlePlayPause();
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          handleStepFrame(-1.0);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          handleStepFrame(1.0);
+        }
       }
     };
 
@@ -204,7 +325,7 @@ export const MatchAnalysisView = ({
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isFullscreen]);
+  }, [isFullscreen, isMiniMapFullscreen, isPlaying, duration, currentTime]);
 
   const isUserUploadedVideo = Boolean(activeVideo?.stream_url || activeVideo?.saved_filename);
   const hasRealAnalytics = Boolean(realAnalytics && realAnalytics.summary_metrics);
@@ -215,11 +336,31 @@ export const MatchAnalysisView = ({
       realAnalytics.frame_tracking.length > 0
   );
 
+  // Precompute normalized camera movement speeds once when tracking dataset loads/changes.
+  // Memoized so it NEVER recomputes on video playback time updates or scrubbing.
+  const playerSpeedData = useMemo(() => {
+    if (!hasFrameTracking || !realAnalytics?.frame_tracking) return null;
+    return calculatePlayerSpeeds(realAnalytics.frame_tracking);
+  }, [hasFrameTracking, realAnalytics?.frame_tracking]);
+
+  // Precompute ball trajectory and conservative team attribution once when tracking dataset loads/changes.
+  // Memoized so it NEVER recomputes on video playback time updates or scrubbing.
+  const ballTrajectoryData = useMemo(() => {
+    if (!hasFrameTracking || !realAnalytics?.frame_tracking) return null;
+    return calculateBallTrajectory(realAnalytics.frame_tracking);
+  }, [hasFrameTracking, realAnalytics?.frame_tracking]);
+
   // Synchronized frame tracking record for the current playback time
   const activeFrameRecord = useMemo(() => {
     if (!hasFrameTracking) return null;
     return findClosestTrackingRecord(realAnalytics.frame_tracking, currentTime);
   }, [hasFrameTracking, realAnalytics?.frame_tracking, currentTime]);
+
+  // Current speed info for the selected player in the active frame
+  const selectedPlayerSpeed = useMemo(() => {
+    if (!playerSpeedData || !activeFrameRecord || selectedPlayerId == null) return null;
+    return playerSpeedData.getSpeed(activeFrameRecord.frame, selectedPlayerId);
+  }, [playerSpeedData, activeFrameRecord, selectedPlayerId]);
 
   // Determine active video URL
   let videoStreamUrl = null;
@@ -259,6 +400,24 @@ export const MatchAnalysisView = ({
     }
   }, [videoStreamUrl]);
 
+  // High-precision playback time synchronization for live video overlays (runs smoothly during playback)
+  useEffect(() => {
+    let animId = null;
+    if (isPlaying && videoStreamUrl && videoRef.current) {
+      const videoEl = videoRef.current;
+      const syncTime = () => {
+        if (!videoEl.paused && !videoEl.ended) {
+          setCurrentTime(videoEl.currentTime);
+          animId = requestAnimationFrame(syncTime);
+        }
+      };
+      animId = requestAnimationFrame(syncTime);
+    }
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+    };
+  }, [isPlaying, videoStreamUrl]);
+
   const handlePlayPause = () => {
     if (videoRef.current) {
       if (isPlaying) {
@@ -285,6 +444,45 @@ export const MatchAnalysisView = ({
       videoRef.current.currentTime = newTime;
     }
   };
+
+  const handleSeekToTime = useCallback((timeSeconds) => {
+    const nextTime = Math.max(0, Math.min(duration, timeSeconds));
+    setCurrentTime(nextTime);
+    if (videoRef.current) {
+      videoRef.current.currentTime = nextTime;
+    }
+  }, [duration]);
+
+  // Fullscreen keyboard shortcuts: Space (Play/Pause), Left/Right (Step -1s / +1s), F (Fullscreen)
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const handleFullscreenKeyNav = (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        handlePlayPause();
+        resetControlsTimer();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handleStepFrame(-1.0);
+        resetControlsTimer();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleStepFrame(1.0);
+        resetControlsTimer();
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        handleToggleFullscreen();
+      }
+    };
+
+    window.addEventListener('keydown', handleFullscreenKeyNav);
+    return () => window.removeEventListener('keydown', handleFullscreenKeyNav);
+  }, [isFullscreen, isPlaying, duration, currentTime, resetControlsTimer]);
 
   const formatTimecode = (seconds) => {
     if (isNaN(seconds) || seconds < 0) return '00:00.0';
@@ -467,14 +665,27 @@ export const MatchAnalysisView = ({
         {(viewMode === 'split' || viewMode === 'video') && (
           <div
             ref={playerContainerRef}
+            onMouseMove={isFullscreen ? resetControlsTimer : undefined}
+            onPointerMove={isFullscreen ? resetControlsTimer : undefined}
             className={`${
               isFullscreen
-                ? 'fixed inset-0 z-50 w-screen h-screen bg-black p-4 sm:p-6 flex flex-col justify-between select-none'
+                ? `fixed inset-0 z-50 w-screen h-[100dvh] max-w-none max-h-none m-0 p-0 rounded-none border-none bg-black overflow-hidden select-none ${
+                    !showFullscreenControls && isPlaying ? 'cursor-none' : 'cursor-default'
+                  }`
                 : 'bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between'
             } transition-colors`}
           >
             {/* Video Player Header with Status */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3 shrink-0">
+            <div
+              className={`${
+                isFullscreen
+                  ? `absolute top-0 inset-x-0 z-30 transition-opacity duration-300 bg-gradient-to-b from-black/90 via-black/50 to-transparent px-4 sm:px-6 pt-4 sm:pt-5 pb-8 flex items-center justify-between ${
+                      showFullscreenControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                    }`
+                  : 'flex items-center justify-between pb-3 border-b border-[#253244] mb-3 shrink-0'
+              }`}
+              onMouseEnter={isFullscreen ? () => setShowFullscreenControls(true) : undefined}
+            >
               <div className="flex items-center gap-2">
                 <Film className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
@@ -487,7 +698,7 @@ export const MatchAnalysisView = ({
                 {isFullscreen && (
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hidden sm:inline-flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    FULLSCREEN
+                    FULLSCREEN (ESC TO EXIT)
                   </span>
                 )}
               </div>
@@ -495,28 +706,68 @@ export const MatchAnalysisView = ({
               {/* Overlays / Stream View Switcher & Fullscreen Button */}
               <div className="flex items-center gap-2">
                 {isUserUploadedVideo && hasRealAnalytics ? (
-                  <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-[10px] font-mono">
+                  <>
+                    <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#253244] text-[10px] font-mono">
+                      <button
+                        onClick={() => setShowAnnotated(true)}
+                        className={`px-2 py-0.5 rounded transition-colors ${
+                          showAnnotated
+                            ? 'bg-emerald-500 text-black font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Annotated AI
+                      </button>
+                      <button
+                        onClick={() => setShowAnnotated(false)}
+                        className={`px-2 py-0.5 rounded transition-colors ${
+                          !showAnnotated
+                            ? 'bg-[#17212E] text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Raw
+                      </button>
+                    </div>
+
+                    {/* Live Video Player Speed Labels Toggle */}
                     <button
-                      onClick={() => setShowAnnotated(true)}
-                      className={`px-2 py-0.5 rounded transition-colors ${
-                        showAnnotated
-                          ? 'bg-emerald-500 text-black font-bold'
-                          : 'text-slate-400 hover:text-white'
+                      onClick={() => setShowSpeedOverlay((prev) => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors border flex items-center gap-1.5 ${
+                        showSpeedOverlay
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : 'bg-[#080B10] text-slate-400 border-[#253244] hover:text-white'
                       }`}
+                      title="Toggle live player speed labels over video"
                     >
-                      Annotated AI
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          showSpeedOverlay ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+                        }`}
+                      ></span>
+                      <span className="hidden sm:inline">Speed Labels:</span>
+                      <span>{showSpeedOverlay ? 'ON' : 'OFF'}</span>
                     </button>
+
+                    {/* Live Video Ball Trajectory Trail Toggle */}
                     <button
-                      onClick={() => setShowAnnotated(false)}
-                      className={`px-2 py-0.5 rounded transition-colors ${
-                        !showAnnotated
-                          ? 'bg-[#17212E] text-white font-bold'
-                          : 'text-slate-400 hover:text-white'
+                      onClick={() => setShowBallTrail((prev) => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors border flex items-center gap-1.5 ${
+                        showBallTrail
+                          ? 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                          : 'bg-[#080B10] text-slate-400 border-[#253244] hover:text-white'
                       }`}
+                      title="Toggle live ball trajectory trail over video"
                     >
-                      Raw
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          showBallTrail ? 'bg-sky-400 animate-pulse' : 'bg-slate-500'
+                        }`}
+                      ></span>
+                      <span className="hidden sm:inline">Ball Trail:</span>
+                      <span>{showBallTrail ? 'ON' : 'OFF'}</span>
                     </button>
-                  </div>
+                  </>
                 ) : !isUserUploadedVideo ? (
                   <>
                     <button
@@ -553,7 +804,7 @@ export const MatchAnalysisView = ({
                 <button
                   onClick={handleToggleFullscreen}
                   className="p-1.5 rounded-lg bg-[#080B10] hover:bg-[#17212E] text-slate-300 hover:text-white border border-[#253244] text-xs font-mono transition-colors flex items-center gap-1 active:scale-95"
-                  title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen'}
+                  title={isFullscreen ? 'Exit Fullscreen (Esc or F)' : 'Enter Fullscreen (F)'}
                   aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
                 >
                   {isFullscreen ? (
@@ -573,30 +824,56 @@ export const MatchAnalysisView = ({
 
             {/* Video Player Display Container */}
             <div
-              className={`relative w-full ${
+              className={`${
                 isFullscreen
-                  ? 'flex-1 min-h-0 my-3 rounded-xl'
-                  : 'aspect-video rounded-xl'
-              } overflow-hidden bg-black border border-[#253244] flex items-center justify-center select-none`}
+                  ? 'absolute inset-0 w-full h-full rounded-none border-0 m-0 p-0 z-0'
+                  : 'relative w-full aspect-video rounded-xl border border-[#253244]'
+              } overflow-hidden bg-black flex items-center justify-center select-none`}
             >
               {videoStreamUrl ? (
-                /* Real HTML5 Video Player playing user uploaded video or annotated video */
-                <video
-                  key={videoStreamUrl}
-                  ref={videoRef}
-                  src={videoStreamUrl}
-                  className="w-full h-full object-contain"
-                  onTimeUpdate={() => {
-                    if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
-                  }}
-                  onLoadedMetadata={() => {
-                    if (videoRef.current && videoRef.current.duration) {
-                      setDuration(videoRef.current.duration);
-                    }
-                  }}
-                  onEnded={() => setIsPlaying(false)}
-                  controls={false}
-                />
+                <>
+                  {/* Real HTML5 Video Player playing user uploaded video or annotated video */}
+                  <video
+                    key={videoStreamUrl}
+                    ref={videoRef}
+                    src={videoStreamUrl}
+                    className="w-full h-full object-contain"
+                    onTimeUpdate={() => {
+                      if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
+                    }}
+                    onLoadedMetadata={() => {
+                      if (videoRef.current && videoRef.current.duration) {
+                        setDuration(videoRef.current.duration);
+                      }
+                    }}
+                    onEnded={() => setIsPlaying(false)}
+                    controls={false}
+                  />
+
+                  {/* Synchronized live ball trajectory trail overlay */}
+                  {showBallTrail && isUserUploadedVideo && hasFrameTracking && (
+                    <BallTrajectoryVideoOverlay
+                      videoRef={videoRef}
+                      frameRecord={activeFrameRecord}
+                      currentTime={currentTime}
+                      trajectoryEngine={ballTrajectoryData}
+                      isFullscreen={isFullscreen}
+                      viewMode={viewMode}
+                    />
+                  )}
+
+                  {/* Synchronized live player speed overlay with letterbox/pillarbox compensation */}
+                  {showSpeedOverlay && isUserUploadedVideo && hasFrameTracking && (
+                    <VideoSpeedOverlay
+                      videoRef={videoRef}
+                      frameRecord={activeFrameRecord}
+                      playerSpeedData={playerSpeedData}
+                      selectedPlayerId={selectedPlayerId}
+                      isFullscreen={isFullscreen}
+                      viewMode={viewMode}
+                    />
+                  )}
+                </>
               ) : (
                 /* Simulated Tactical Broadcast Screen with football pitch canvas (Demo) */
                 <div className="relative w-full h-full bg-[#07150E] flex items-center justify-center overflow-hidden">
@@ -656,9 +933,18 @@ export const MatchAnalysisView = ({
             </div>
 
             {/* Controls Section (Timeline + Playback Bar) */}
-            <div className="shrink-0 w-full">
+            <div
+              className={`${
+                isFullscreen
+                  ? `absolute bottom-0 inset-x-0 z-30 transition-opacity duration-300 bg-gradient-to-t from-black/95 via-black/60 to-transparent px-4 sm:px-6 pb-4 sm:pb-6 pt-8 ${
+                      showFullscreenControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                    }`
+                  : 'shrink-0 w-full'
+              }`}
+              onMouseEnter={isFullscreen ? () => setShowFullscreenControls(true) : undefined}
+            >
               {/* Match Timeline Scrub Bar */}
-              <div className="mt-3.5 space-y-1.5">
+              <div className={isFullscreen ? 'space-y-1.5' : 'mt-3.5 space-y-1.5'}>
                 <div className="flex items-center justify-between text-xs font-mono text-slate-400">
                   <span className="text-emerald-400 font-medium">{formatTimecode(currentTime)}</span>
                   <span>{formatTimecode(duration)}</span>
@@ -675,28 +961,42 @@ export const MatchAnalysisView = ({
               </div>
 
               {/* Playback Controls & Frame Steppers */}
-              <div className="mt-3 flex items-center justify-between gap-2 pt-2.5 border-t border-[#253244]">
+              <div
+                className={`flex items-center justify-between gap-2 ${
+                  isFullscreen ? 'pt-2' : 'mt-3 pt-2.5 border-t border-[#253244]'
+                }`}
+              >
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleStepFrame(-1.0)}
                     className="p-1.5 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors"
-                    title="Step 1s Backward"
+                    title="Step 1s Backward (Left Arrow)"
                   >
                     <SkipBack className="w-4 h-4" />
                   </button>
 
                   <button
                     onClick={handlePlayPause}
-                    className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold shadow-sm transition-all active:scale-95"
-                    title={isPlaying ? 'Pause' : 'Play'}
+                    className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
+                    title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
                   >
-                    {isPlaying ? <Pause className="w-4 h-4 fill-black" /> : <Play className="w-4 h-4 fill-black" />}
+                    {isPlaying ? (
+                      <>
+                        <Pause className="w-4 h-4 fill-black" />
+                        <span className="text-xs font-mono font-bold hidden sm:inline">Pause</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 fill-black" />
+                        <span className="text-xs font-mono font-bold hidden sm:inline">Play</span>
+                      </>
+                    )}
                   </button>
 
                   <button
                     onClick={() => handleStepFrame(1.0)}
                     className="p-1.5 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 text-xs font-mono transition-colors"
-                    title="Step 1s Forward"
+                    title="Step 1s Forward (Right Arrow)"
                   >
                     <SkipForward className="w-4 h-4" />
                   </button>
@@ -728,7 +1028,7 @@ export const MatchAnalysisView = ({
                     <button
                       onClick={handleToggleFullscreen}
                       className="px-2.5 py-1 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-mono border border-[#253244] transition-colors flex items-center gap-1"
-                      title="Exit Fullscreen (Esc)"
+                      title="Exit Fullscreen (Esc or F)"
                     >
                       <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
                       <span className="text-[10px] hidden sm:inline">Exit Fullscreen</span>
@@ -741,8 +1041,15 @@ export const MatchAnalysisView = ({
         )}
 
         {/* Panel 2: Interactive 2D Pitch / Telemetry Overview */}
-        {(viewMode === 'split' || viewMode === 'pitch') && (
-          <div className="bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between">
+        {(viewMode === 'split' || viewMode === 'pitch' || isMiniMapFullscreen) && (
+          <div
+            ref={miniMapContainerRef}
+            className={`${
+              isMiniMapFullscreen
+                ? 'fixed inset-0 z-50 w-screen h-[100dvh] max-w-none max-h-none m-0 p-4 sm:p-6 rounded-none border-none bg-[#05090D] overflow-y-auto flex flex-col justify-between select-none'
+                : 'bg-[#101722] border border-[#253244] rounded-2xl p-4 sm:p-5 shadow-panel flex flex-col justify-between'
+            } transition-colors`}
+          >
             <div>
               {/* Pitch Canvas / Mini-Map Header */}
               <div className="flex items-center justify-between pb-3 border-b border-[#253244] mb-3">
@@ -751,26 +1058,84 @@ export const MatchAnalysisView = ({
                   <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
                     {isUserUploadedVideo
                       ? hasFrameTracking
-                        ? 'Camera-Relative Mini-Map'
+                        ? isMiniMapFullscreen
+                          ? 'Tactical Mini-Map (Fullscreen View)'
+                          : 'Camera-Relative Mini-Map'
                         : '2D Pitch Map (FIFA 105m × 68m)'
                       : '2D Pitch Map (FIFA 105m × 68m)'}
                   </span>
+                  {isMiniMapFullscreen && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hidden sm:inline-flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      FULLSCREEN (ESC TO EXIT)
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* If in mini-map fullscreen, display compact playback controls */}
+                  {isMiniMapFullscreen && (
+                    <div className="flex items-center gap-1 bg-[#080B10] p-1 rounded-xl border border-[#253244]">
+                      <button
+                        onClick={() => handleStepFrame(-1.0)}
+                        className="p-1.5 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 transition-colors"
+                        title="Step 1s Backward (Left Arrow)"
+                      >
+                        <SkipBack className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={handlePlayPause}
+                        className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs font-mono flex items-center gap-1.5 shadow transition-all active:scale-95"
+                        title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                      >
+                        {isPlaying ? (
+                          <>
+                            <Pause className="w-3.5 h-3.5 fill-black" />
+                            <span>Pause</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5 fill-black" />
+                            <span>Play</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => handleStepFrame(1.0)}
+                        className="p-1.5 rounded-lg bg-[#17212E] hover:bg-slate-800 text-slate-300 transition-colors"
+                        title="Step 1s Forward (Right Arrow)"
+                      >
+                        <SkipForward className="w-3.5 h-3.5" />
+                      </button>
+
+                      <span className="text-[11px] font-mono text-emerald-400 px-2 py-0.5 border-l border-[#253244]">
+                        {formatTimecode(currentTime)}
+                      </span>
+                    </div>
+                  )}
+
                   {isUserUploadedVideo ? (
                     hasFrameTracking ? (
                       <div className="flex items-center gap-2 text-[10px] font-mono">
-                        <span className="text-slate-300 bg-[#080B10] px-2.5 py-0.5 rounded border border-[#253244]">
-                          Frame {activeFrameRecord?.frame ?? 0} ({formatTimecode(currentTime)})
+                        <span className="text-slate-300 bg-[#080B10] px-2.5 py-0.5 rounded border border-[#253244] hidden sm:inline">
+                          Frame {activeFrameRecord?.frame ?? 0}
                         </span>
                         <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">
                           {activeFrameRecord?.players?.length || 0} Visible
                         </span>
                         {activeFrameRecord?.ball && (
-                          <span className="text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/25 hidden sm:inline-flex items-center gap-1">
+                          <span className="text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/25 hidden md:inline-flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-yellow-300 animate-pulse"></span>
                             Ball
+                          </span>
+                        )}
+                        {selectedPlayerSpeed && selectedPlayerSpeed.isValid && (
+                          <span className="text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/25 hidden lg:inline-flex items-center gap-1">
+                            <span>#{selectedPlayerId}:</span>
+                            <span className="font-semibold text-white">{selectedPlayerSpeed.speed}</span>
+                            <span className="text-[9px] text-slate-400">({selectedPlayerSpeed.label})</span>
                           </span>
                         )}
                       </div>
@@ -791,6 +1156,28 @@ export const MatchAnalysisView = ({
                       Tactical Thirds: {showZoneOverlay ? 'ON' : 'OFF'}
                     </button>
                   )}
+
+                  {/* Expand / Fullscreen Button for Mini-Map Header */}
+                  {isUserUploadedVideo && hasFrameTracking && (
+                    <button
+                      onClick={handleToggleMiniMapFullscreen}
+                      className="p-1.5 rounded-lg bg-[#080B10] hover:bg-[#17212E] text-slate-300 hover:text-white border border-[#253244] text-xs font-mono transition-colors flex items-center gap-1 active:scale-95"
+                      title={isMiniMapFullscreen ? 'Exit Fullscreen (Esc)' : 'Expand Fullscreen'}
+                      aria-label={isMiniMapFullscreen ? 'Exit Fullscreen' : 'Expand Fullscreen'}
+                    >
+                      {isMiniMapFullscreen ? (
+                        <>
+                          <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-[10px] font-mono text-slate-300 hidden sm:inline">Exit</span>
+                        </>
+                      ) : (
+                        <>
+                          <Maximize2 className="w-3.5 h-3.5 text-slate-300 hover:text-emerald-400" />
+                          <span className="text-[10px] font-mono text-slate-300 hidden sm:inline">Fullscreen</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -799,6 +1186,7 @@ export const MatchAnalysisView = ({
                 <CameraRelativeMiniMap
                   frameRecord={activeFrameRecord}
                   currentTime={currentTime}
+                  duration={duration}
                   selectedPlayerId={selectedPlayerId}
                   onSelectPlayer={(id) => {
                     setSelectedPlayerId(id);
@@ -809,6 +1197,13 @@ export const MatchAnalysisView = ({
                   teamBName={realAnalytics?.summary_metrics?.team_b_name || 'Team B'}
                   teamAColor={realAnalytics?.summary_metrics?.team_a_color || '#38BDF8'}
                   teamBColor={realAnalytics?.summary_metrics?.team_b_color || '#F43F5E'}
+                  speedData={playerSpeedData}
+                  isFullscreen={isMiniMapFullscreen}
+                  onToggleFullscreen={handleToggleMiniMapFullscreen}
+                  isPlaying={isPlaying}
+                  onPlayPause={handlePlayPause}
+                  onStepFrame={handleStepFrame}
+                  onSeek={handleSeek}
                 />
               ) : (
                 <PitchCanvas
@@ -912,6 +1307,20 @@ export const MatchAnalysisView = ({
           </div>
         )}
       </div>
+
+      {/* Ball Trajectory & Team Possession Analysis Panel */}
+      {hasRealAnalytics && (
+        <BallTrajectoryAnalysisPanel
+          trajectoryEngine={ballTrajectoryData}
+          currentTime={currentTime}
+          duration={duration}
+          isPlaying={isPlaying}
+          frameRecord={activeFrameRecord}
+          onSeekToTime={handleSeekToTime}
+          teamAName={realAnalytics?.summary_metrics?.team_a_name || 'Team A'}
+          teamBName={realAnalytics?.summary_metrics?.team_b_name || 'Team B'}
+        />
+      )}
 
       {/* Real Tracked Players Quick Roster (If real analytics available) */}
       {hasRealAnalytics && realAnalytics.players && realAnalytics.players.length > 0 && (

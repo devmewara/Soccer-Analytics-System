@@ -47,6 +47,7 @@ class FramePlayerTrackingItem(BaseModel):
     team: str
     x: float
     y: float
+    bbox: Optional[List[float]] = None
 
 class FrameBallTrackingItem(BaseModel):
     x: float

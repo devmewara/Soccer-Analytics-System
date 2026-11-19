@@ -808,29 +808,31 @@ class ComputerVisionPipelineService:
 
                         # Smooth displayed team label over recent frames to suppress crossing flickers
                         display_team = self._smooth_team_label(stat["team_votes"])
-                        box_color, label_bg, text_color, _ = self._team_style(display_team)
-                        label_text = f"{display_team} #{track_id} ({conf:.2f})"
+                        box_color, _, _, _ = self._team_style(display_team)
 
+                        # Draw team-colored player bounding box without crowded text label above player's head
                         cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-                        self._draw_label_pill(
-                            frame,
-                            label_text,
-                            x1,
-                            y1,
-                            bg_color=label_bg,
-                            text_color=text_color,
-                        )
 
                         # Record normalized ground-contact coordinates for Tactical Mini-Map
                         center_x = (x1 + x2) / 2.0
                         feet_y = float(y2)
                         norm_x = round(float(center_x / width * 100.0), 1)
                         norm_y = round(float(feet_y / height * 100.0), 1)
+                        norm_x1 = round(float(x1 / width * 100.0), 1)
+                        norm_y1 = round(float(y1 / height * 100.0), 1)
+                        norm_x2 = round(float(x2 / width * 100.0), 1)
+                        norm_y2 = round(float(y2 / height * 100.0), 1)
                         frame_players_data.append({
                             "id": track_id,
                             "team": display_team,
                             "x": max(0.0, min(100.0, norm_x)),
                             "y": max(0.0, min(100.0, norm_y)),
+                            "bbox": [
+                                max(0.0, min(100.0, norm_x1)),
+                                max(0.0, min(100.0, norm_y1)),
+                                max(0.0, min(100.0, norm_x2)),
+                                max(0.0, min(100.0, norm_y2)),
+                            ],
                         })
 
                 # Render validated on-pitch ball (at most one per frame, separate from player stats)
